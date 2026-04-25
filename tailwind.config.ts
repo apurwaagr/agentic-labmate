@@ -38,6 +38,21 @@ export default {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+          soft: "hsl(var(--accent-soft))",
+        },
+        surface: "hsl(var(--surface))",
+        panel: "hsl(var(--panel))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          soft: "hsl(var(--success-soft))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          soft: "hsl(var(--warning-soft))",
+        },
+        danger: {
+          DEFAULT: "hsl(var(--danger))",
+          soft: "hsl(var(--danger-soft))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",
