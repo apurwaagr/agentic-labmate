@@ -1,17 +1,17 @@
 import { Calendar } from "lucide-react";
+import type { TimelinePhase } from "@/lib/labApi";
 
-const tasks = [
-  { name: "Media prep & autoclave", start: 0, len: 1, color: "bg-primary" },
-  { name: "Overnight culture", start: 1, len: 2, color: "bg-primary/70" },
-  { name: "Induction & expression", start: 3, len: 2, color: "bg-accent" },
-  { name: "Cell harvest & lysis", start: 5, len: 1, color: "bg-primary" },
-  { name: "Purification (Ni-NTA)", start: 6, len: 2, color: "bg-primary/70" },
-  { name: "SDS-PAGE & QC", start: 8, len: 1, color: "bg-success" },
-];
+export function TimelineCard({ phases }: { phases: TimelinePhase[] }) {
+  const totalDays = phases.reduce((sum, phase) => sum + phase.durationDays, 0);
+  const days = Array.from({ length: Math.max(totalDays, 1) }, (_, index) => `D${index + 1}`);
+  let cursor = 0;
 
-const days = Array.from({ length: 10 }, (_, i) => `D${i + 1}`);
+  const positioned = phases.map((phase) => {
+    const row = { ...phase, start: cursor };
+    cursor += phase.durationDays;
+    return row;
+  });
 
-export function TimelineCard() {
   return (
     <section className="rounded-xl bg-panel border border-border shadow-sm p-5">
       <header className="flex items-center justify-between mb-4">
@@ -20,28 +20,28 @@ export function TimelineCard() {
           <h3 className="text-base font-semibold">Timeline</h3>
         </div>
         <div className="text-xs text-muted-foreground">
-          Total: <span className="font-semibold text-foreground">9 days</span>
+          Total: <span className="font-semibold text-foreground">{totalDays} days</span>
         </div>
       </header>
 
       <div className="space-y-1.5">
-        <div className="grid grid-cols-10 gap-1 text-[10px] text-muted-foreground font-mono pl-40">
-          {days.map((d) => (
-            <div key={d} className="text-center">{d}</div>
+        <div className={`grid gap-1 text-[10px] text-muted-foreground font-mono pl-44`} style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
+          {days.map((day) => (
+            <div key={day} className="text-center">
+              {day}
+            </div>
           ))}
         </div>
-        {tasks.map((t) => (
-          <div key={t.name} className="flex items-center gap-2">
-            <div className="w-40 text-xs text-foreground/80 truncate">{t.name}</div>
-            <div className="flex-1 grid grid-cols-10 gap-1">
-              {days.map((_, i) => {
-                const inSpan = i >= t.start && i < t.start + t.len;
-                return (
-                  <div
-                    key={i}
-                    className={`h-5 rounded ${inSpan ? t.color : "bg-muted/60"}`}
-                  />
-                );
+        {positioned.map((phase) => (
+          <div key={phase.phase} className="flex items-center gap-2">
+            <div className="w-44">
+              <div className="text-xs text-foreground/80 truncate">{phase.phase}</div>
+              <div className="text-[10px] text-muted-foreground">{phase.owner}</div>
+            </div>
+            <div className={`flex-1 grid gap-1`} style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}>
+              {days.map((_, index) => {
+                const inSpan = index >= phase.start && index < phase.start + phase.durationDays;
+                return <div key={index} className={`h-5 rounded ${inSpan ? "bg-primary" : "bg-muted/60"}`} />;
               })}
             </div>
           </div>
