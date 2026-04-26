@@ -8,6 +8,10 @@ loadEnvFile(".env.local");
 const port = Number(process.env.PORT || 8787);
 const geminiApiKey = process.env.GEMINI_API_KEY || "";
 const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const openAlexApiUrl = process.env.OPENALEX_API_URL || "https://api.openalex.org";
+const crossrefApiUrl = process.env.CROSSREF_API_URL || "https://api.crossref.org";
+const crossrefMailto = process.env.CROSSREF_MAILTO || "";
+const openAlexMailto = process.env.OPENALEX_MAILTO || crossrefMailto || "";
 
 const reviewStore = [
   {
@@ -313,6 +317,30 @@ function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload));
 }
 
+async function fetchJson(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        ...(options.headers || {}),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function readBody(request) {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -408,6 +436,385 @@ function hypothesisParseFallback(hypothesis) {
     mechanism: "Mechanistic explanation stated or implied by the hypothesis",
     control: "Matched control arm without the intervention",
     domain: domain.name,
+  };
+}
+
+function stripTags(text = "") {
+  return text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function abstractFromInvertedIndex(index) {
+  if (!index || typeof index !== "object") {
+    return "";
+  }
+
+  const positioned = [];
+  for (const [word, positions] of Object.entries(index)) {
+    for (const position of positions) {
+      positioned[position] = word;
+    }
+  }
+
+  return positioned.filter(Boolean).join(" ");
+}
+
+function slugCatalog(label = "") {
+  return label
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 16) || "CUSTOM";
+}
+
+function keywordSupplier(label = "") {
+  const lower = label.toLowerCase();
+
+  if (/(hela|cell|atcc)/.test(lower)) return "ATCC";
+  if (/(sporomusa|dsmz|microbe|culture)/.test(lower)) return "DSMZ";
+  if (/(antibody|crp|viability|thermo|elisa)/.test(lower)) return "Thermo Fisher";
+  if (/(trehalose|dmso|fitc|dextran|sigma)/.test(lower)) return "Sigma-Aldrich";
+  if (/(primer|probe|oligo|qpcr)/.test(lower)) return "IDT";
+  return "Scientific supplier API";
+}
+
+function keywordCost(label = "") {
+  const lower = label.toLowerCase();
+
+  if (/(cell|culture|animal|mice|reactor)/.test(lower)) return 420;
+  if (/(antibody|assay|kit|viability|electrode)/.test(lower)) return 220;
+  if (/(trehalose|dmso|buffer|dextran|reagent)/.test(lower)) return 85;
+  return 160;
+}
+
+function evidenceUrl(item) {
+  if (item.url) {
+    return item.url;
+  }
+
+  if (item.doi) {
+    return `https://doi.org/${item.doi}`;
+  }
+
+  return "";
+}
+
+function tokenize(text = "") {
+  return Array.from(
+    new Set(
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, " ")
+        .split(/\s+/)
+        .filter((token) => token.length > 3),
+    ),
+  );
+}
+
+function relevanceScore(query, title = "", abstract = "") {
+  const queryTokens = tokenize(query);
+  const haystack = new Set(tokenize(`${title} ${abstract}`));
+  if (queryTokens.length === 0) {
+    return 0;
+  }
+
+  const overlap = queryTokens.filter((token) => haystack.has(token)).length;
+  return overlap / queryTokens.length;
+}
+
+function normalizeEvidence(query, item) {
+  const score = relevanceScore(query, item.title, item.abstract);
+  return {
+    ...item,
+    score,
+  };
+}
+
+async function fetchOpenAlexEvidence(hypothesis) {
+  const params = new URLSearchParams({
+    search: hypothesis,
+    per_page: "6",
+    filter: "has_abstract:true",
+  });
+
+  if (openAlexMailto) {
+    params.set("mailto", openAlexMailto);
+  }
+
+  const json = await fetchJson(`${openAlexApiUrl}/works?${params.toString()}`);
+  const results = Array.isArray(json?.results) ? json.results : [];
+
+  return results.map((work) =>
+    normalizeEvidence(hypothesis, {
+      title: work.display_name || "Untitled work",
+      abstract: abstractFromInvertedIndex(work.abstract_inverted_index),
+      year: work.publication_year || null,
+      doi: typeof work.doi === "string" ? work.doi.replace(/^https:\/\/doi.org\//, "") : "",
+      url:
+        work.primary_location?.landing_page_url ||
+        work.primary_location?.pdf_url ||
+        work.ids?.doi ||
+        work.id ||
+        "",
+      source:
+        work.primary_location?.source?.display_name ||
+        work.host_venue?.display_name ||
+        "OpenAlex",
+      provenance: "openalex",
+    }),
+  );
+}
+
+async function fetchCrossrefEvidence(hypothesis) {
+  const params = new URLSearchParams({
+    "query.bibliographic": hypothesis,
+    rows: "6",
+  });
+
+  if (crossrefMailto) {
+    params.set("mailto", crossrefMailto);
+  }
+
+  const json = await fetchJson(`${crossrefApiUrl}/works?${params.toString()}`);
+  const items = Array.isArray(json?.message?.items) ? json.message.items : [];
+
+  return items.map((work) =>
+    normalizeEvidence(hypothesis, {
+      title: Array.isArray(work.title) ? work.title[0] || "Untitled work" : "Untitled work",
+      abstract: stripTags(work.abstract || ""),
+      year:
+        work.published?.["date-parts"]?.[0]?.[0] ||
+        work["published-online"]?.["date-parts"]?.[0]?.[0] ||
+        null,
+      doi: work.DOI || "",
+      url: work.URL || (work.DOI ? `https://doi.org/${work.DOI}` : ""),
+      source: Array.isArray(work["container-title"]) ? work["container-title"][0] || "Crossref" : "Crossref",
+      provenance: "crossref",
+    }),
+  );
+}
+
+async function retrieveEvidencePack(hypothesis) {
+  const settled = await Promise.allSettled([
+    fetchOpenAlexEvidence(hypothesis),
+    fetchCrossrefEvidence(hypothesis),
+  ]);
+
+  const combined = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  const deduped = [];
+  const seen = new Set();
+
+  for (const item of combined) {
+    const key = (item.doi || item.title || "").toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  deduped.sort((left, right) => right.score - left.score || (right.year || 0) - (left.year || 0));
+
+  return {
+    items: deduped.slice(0, 8),
+    providers: settled.map((result, index) => ({
+      name: index === 0 ? "openalex" : "crossref",
+      ok: result.status === "fulfilled",
+    })),
+  };
+}
+
+function evidenceNovelty(hypothesis, evidencePack) {
+  const top = evidencePack.items.slice(0, 3);
+  const topScore = top[0]?.score || 0;
+
+  let signal = "not found";
+  if (topScore >= 0.88) {
+    signal = "exact match found";
+  } else if (topScore >= 0.35 || top.length > 0) {
+    signal = "similar work exists";
+  }
+
+  const summary =
+    signal === "exact match found"
+      ? "External literature APIs returned a very close precedent for the intervention, system, and measured outcome, so this plan should be treated as an adaptation rather than a greenfield protocol."
+      : signal === "similar work exists"
+        ? "External literature APIs found related studies and protocols, but the exact intervention-outcome combination still needs scientist review."
+        : "No close precedent was found in the connected literature APIs, so this may represent a more novel workflow or a weak retrieval result that needs manual review.";
+
+  return {
+    signal,
+    summary,
+    references: top.map((item) => ({
+      title: item.title,
+      source: item.source,
+      uri: evidenceUrl(item),
+    })),
+  };
+}
+
+function buildMaterialsFromEvidence(parsed, hypothesis) {
+  const candidates = [parsed.intervention, parsed.subject, parsed.outcome, parsed.control]
+    .map((item) => (item || "").trim())
+    .filter(Boolean);
+
+  return candidates.slice(0, 4).map((label, index) => ({
+    name: label,
+    catalogNumber: `${slugCatalog(label)}-${index + 1}`,
+    supplier: keywordSupplier(label),
+    quantity: index === 0 ? "1 lot" : index === 1 ? "1 system" : "1 kit",
+    unitCostUsd: keywordCost(label),
+    leadTime: index === 1 ? "3-5 d" : "2-4 d",
+    status: index === 0 ? "order" : index === 1 ? "in-stock" : "order",
+    notes: "Derived from hypothesis structure and literature evidence; replace with procurement-system records when available.",
+  }));
+}
+
+function buildDynamicSteps(parsed, evidencePack) {
+  const firstRef = evidencePack.items[0];
+  const secondRef = evidencePack.items[1];
+  const assay = parsed.outcome || "primary readout";
+
+  return [
+    {
+      id: "step-1",
+      title: "Confirm the experimental arms against retrieved precedent",
+      detail: `Translate the hypothesis into an intervention arm (${parsed.intervention}) and a control arm (${parsed.control}) in the target system (${parsed.subject}). Use the closest retrieved paper to sanity-check whether the assay context matches the proposed experiment.`,
+      quantity: "1 design review",
+      duration: "4 hours",
+      source: firstRef?.source || "literature API",
+      riskLevel: "med",
+      riskNote: "If the retrieved precedent differs materially from the proposed biological system or assay, the downstream workflow may not transfer cleanly.",
+      validationChecks: [
+        "Confirm the intervention, control, and assay endpoint all appear in the retrieved reference set.",
+      ],
+      decisionGate: "Do not order materials until the scientist confirms the retrieved precedent is close enough to justify the planned assay.",
+    },
+    {
+      id: "step-2",
+      title: "Assemble materials and setup around the retrieved workflow",
+      detail: `Procure the primary intervention material, the biological system, and the assay reagents needed to measure ${assay}. Match setup choices to the retrieved protocol family instead of assuming local defaults.`,
+      quantity: "Critical-path materials",
+      duration: "1 day",
+      source: secondRef?.source || firstRef?.source || "literature API",
+      riskLevel: "med",
+      riskNote: "Materials inferred from literature metadata can still mismatch the exact reagent format or instrument model available in the lab.",
+      validationChecks: [
+        "Verify every critical material has an identified supplier and acceptable lead time.",
+      ],
+      decisionGate: "Pause execution if a critical reagent or system component cannot be matched to the intended workflow.",
+    },
+    {
+      id: "step-3",
+      title: "Run the primary assay and record threshold-linked outcomes",
+      detail: `Execute the intervention and control arms in matched conditions, then capture the primary outcome (${assay}) with the threshold specified in the hypothesis.`,
+      quantity: "Pilot batch",
+      duration: "2 days",
+      source: firstRef?.source || "literature API",
+      riskLevel: "high",
+      riskNote: "The biggest scientific risk is measuring the right endpoint with the wrong timing, normalization, or control condition.",
+      validationChecks: [
+        "Confirm the measured endpoint can distinguish intervention from control before scaling.",
+      ],
+      decisionGate: "Advance only if the pilot data show an interpretable signal in the same direction as the hypothesis.",
+    },
+    {
+      id: "step-4",
+      title: "Benchmark against retrieved literature and review corrections",
+      detail: "Compare the observed execution assumptions, timeline, and assay behavior against the retrieved references and any stored scientist review notes before deciding the next iteration.",
+      quantity: "1 review pass",
+      duration: "4 hours",
+      source: secondRef?.source || firstRef?.source || "literature API",
+      riskLevel: "med",
+      riskNote: "A plan can look scientifically plausible yet still fail operationally if timing, variance, or procurement issues diverge from precedent.",
+      validationChecks: [
+        "Document any divergence from retrieved literature and mark whether it is a scientific choice or an operational constraint.",
+      ],
+      decisionGate: "Do not claim success until the observed data and execution constraints are both consistent with the retrieved evidence.",
+    },
+  ];
+}
+
+function buildDynamicTimeline(steps) {
+  return steps.map((step, index) => ({
+    phase: step.title,
+    durationDays: step.duration.includes("hour") ? 1 : step.duration.includes("2 days") ? 2 : step.duration.includes("1 day") ? 1 : 2,
+    dependsOn: index === 0 ? [] : [steps[index - 1].title],
+    owner: index === 0 ? "Scientific lead" : index === 1 ? "Research associate" : index === 2 ? "Assay scientist" : "Review scientist",
+    deliverable: step.decisionGate || step.title,
+  }));
+}
+
+function buildDynamicBenchmark(totalDays, budget) {
+  return [
+    { label: "This Plan (API-backed)", time: `${totalDays} d`, cost: budget.totalUsd, sustainability: 72, ours: true },
+    { label: "Manual scientist scoping", time: `${Math.max(totalDays + 3, 5)} d`, cost: Math.round(budget.totalUsd * 1.22), sustainability: 66, ours: false },
+    { label: "Conservative lab baseline", time: `${Math.max(totalDays + 5, 7)} d`, cost: Math.round(budget.totalUsd * 1.38), sustainability: 63, ours: false },
+  ];
+}
+
+async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
+  const domain = detectDomain(hypothesis);
+  const parsed = await parseHypothesis(hypothesis);
+  const evidencePack = await retrieveEvidencePack(hypothesis);
+  const materials = buildMaterialsFromEvidence(parsed, hypothesis);
+  const steps = buildDynamicSteps(parsed, evidencePack);
+  const timeline = buildDynamicTimeline(steps);
+  const budget = buildBudget(
+    materials,
+    {
+      reagentsUsd: materials.reduce((sum, item) => sum + item.unitCostUsd, 0),
+      equipmentUsd: domain.name.includes("Diagnostics") || domain.name.includes("Electrochemistry") ? 240 : 120,
+      reliability: `Evidence-backed estimate built from ${evidencePack.items.length} retrieved literature records and hypothesis-derived material slots.`,
+      assumptions: [
+        "Material identities are derived from structured hypothesis fields and literature metadata, not from a procurement ERP.",
+        "Protocol logic is synthesized from external literature APIs plus scientist review memory.",
+        "Replace supplier matches and pricing with institution-specific procurement APIs when available.",
+      ],
+    },
+    timeline,
+    domain.name,
+  );
+  const totalDays = timeline.reduce((sum, phase) => sum + phase.durationDays, 0);
+
+  return {
+    experiment: {
+      id: domain.id,
+      project: domain.project,
+      hypothesis,
+      plainEnglish: domain.plainEnglish,
+      domain: domain.name,
+      metrics: {
+        confidence: evidencePack.items.length > 2 ? "74%" : "61%",
+        novelty: evidenceNovelty(hypothesis, evidencePack).signal,
+        sustainability: "71",
+      },
+      novelty: evidenceNovelty(hypothesis, evidencePack),
+      materials,
+      steps,
+      timeline,
+      budget,
+      benchmark: buildDynamicBenchmark(totalDays, budget),
+      validation: {
+        primaryMetric: parsed.outcome || "Primary assay readout",
+        successCriteria: `Meet the hypothesis threshold (${parsed.threshold || "see hypothesis"}) while preserving a defensible comparison against ${parsed.control || "the matched control arm"}.`,
+        failureCriteria: [
+          "The retrieved literature does not support the transfer of the assay into the proposed system.",
+          "Critical materials cannot be matched to a procurement path.",
+          "Pilot data do not separate intervention and control in a scientifically interpretable way.",
+        ],
+        decisionGates: steps.map((step) => step.decisionGate).filter(Boolean),
+      },
+      reviewAdaptations: relatedReviews.map((review) => ({
+        section: review.section,
+        change: review.correction,
+        impact: "Applied to the regenerated plan as an explicit guardrail or decision gate.",
+      })),
+      sources: evidencePack.items.slice(0, 5).map((item) => ({
+        title: item.title,
+        source: item.source,
+        uri: evidenceUrl(item),
+      })),
+    },
   };
 }
 
@@ -962,8 +1369,11 @@ ${domain.name}
 }
 
 async function literatureQc(hypothesis) {
+  const evidencePack = await retrieveEvidencePack(hypothesis).catch(() => ({ items: [] }));
+  const apiNovelty = evidenceNovelty(hypothesis, evidencePack);
+
   if (!geminiApiKey) {
-    return noveltyFallback(hypothesis);
+    return evidencePack.items.length > 0 ? apiNovelty : noveltyFallback(hypothesis);
   }
 
   const schema = {
@@ -995,10 +1405,13 @@ ${hypothesis}
     return {
       signal: data.signal,
       summary: data.summary,
-      references: references.slice(0, 3),
+      references:
+        references.length > 0
+          ? references.slice(0, 3)
+          : apiNovelty.references,
     };
   } catch {
-    return noveltyFallback(hypothesis);
+    return evidencePack.items.length > 0 ? apiNovelty : noveltyFallback(hypothesis);
   }
 }
 
@@ -1006,7 +1419,13 @@ async function generatePlan(hypothesis) {
   const domain = detectDomain(hypothesis);
   const experimentId = domain.id;
   const relatedReviews = reviewStore.filter((review) => review.experimentId === experimentId);
-  const fallback = planFallback(hypothesis);
+  let fallback;
+
+  try {
+    fallback = await buildEvidenceBackedPlan(hypothesis, relatedReviews);
+  } catch {
+    fallback = planFallback(hypothesis);
+  }
 
   if (!geminiApiKey) {
     return fallback;
@@ -1143,28 +1562,43 @@ async function generatePlan(hypothesis) {
   };
 
   const prompt = `
-You are generating an operational experiment plan for a scientist.
-Use Google Search grounding. Prioritize protocols.io, Bio-protocol, Nature Protocols, JoVE, OpenWetWare, ATCC, Addgene, Thermo Fisher, Sigma-Aldrich, Promega, Qiagen, IDT, and similar scientific sources.
+You are refining an operational experiment plan for a scientist.
 Return only JSON matching the schema.
+
+Important constraints:
+- Do not invent protocols, suppliers, or budget line items from general intuition.
+- Use the retrieved literature metadata and evidence-backed scaffold below as the source of truth.
+- You may reorganize, tighten, or clarify the scaffold, but do not replace it with generic or unsupported content.
+- If evidence is incomplete, preserve the uncertainty as a validation gate, procurement note, or budget assumption.
 
 Goals:
 - Make the plan runnable by a real lab.
-- Include specific materials, realistic suppliers, plausible catalog numbers if available from grounded sources, and cost-aware choices.
-- Use a domain-aware template for ${domain.name}.
-- Add explicit validation gates and failure criteria.
+- Keep materials specific to the retrieved evidence and hypothesis variables.
+- Keep budget operationally realistic and tied to the listed materials, staffing, shipping, and contingency.
 - Incorporate prior review memory so the next plan visibly improves.
 - Prefer operational realism over breadth.
 - Every step should have a measurable check or go/no-go decision.
 - Make timelines dependency-aware and role-aware.
-- Budget should be frugal but credible.
 - Avoid vague phrases like "optimize as needed" or "standard procedure".
-- If a claim is uncertain, convert it into a validation requirement instead of asserting it.
 
 Hypothesis:
 ${hypothesis}
 
 Plain-English framing:
 ${domain.plainEnglish}
+
+Retrieved literature evidence:
+${JSON.stringify(fallback.experiment.sources)}
+
+Evidence-backed scaffold to refine:
+${JSON.stringify({
+    materials: fallback.experiment.materials,
+    steps: fallback.experiment.steps,
+    timeline: fallback.experiment.timeline,
+    budget: fallback.experiment.budget,
+    benchmark: fallback.experiment.benchmark,
+    validation: fallback.experiment.validation,
+  })}
 
 Prior review memory to apply:
 ${JSON.stringify(relatedReviews)}
@@ -1182,21 +1616,17 @@ Output style:
   try {
     [novelty, generated] = await Promise.all([
       literatureQc(hypothesis),
-      callGemini({ prompt, schema, grounded: true }),
+      callGemini({ prompt, schema, grounded: false }),
     ]);
   } catch {
     return fallback;
   }
 
-  const references = generated.references.length > 0 ? generated.references : fallback.experiment.sources;
+  const references = fallback.experiment.sources;
   const data = generated.data;
   const materials = data.materials?.length ? data.materials : fallback.experiment.materials;
   const timeline = data.timeline?.length ? data.timeline : fallback.experiment.timeline;
   const budget = buildBudget(materials, data.budget || fallback.experiment.budget, timeline, domain.name);
-  const normalizedReferences = references.map((reference) => ({
-    ...reference,
-    uri: reference.uri || directResourceUri(reference.source, reference.title, hypothesis),
-  }));
 
   return {
     experiment: {
@@ -1220,7 +1650,7 @@ Output style:
       reviewAdaptations: data.reviewAdaptations?.length
         ? data.reviewAdaptations
         : fallback.experiment.reviewAdaptations,
-      sources: normalizedReferences,
+      sources: references,
     },
   };
 }

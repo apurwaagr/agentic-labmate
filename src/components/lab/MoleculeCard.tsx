@@ -109,9 +109,21 @@ function comparatorModelsForPlan(plan: ExperimentPlan, base: MoleculeModel) {
   ];
 }
 
+function protocolContextForPlan(plan: ExperimentPlan) {
+  const protocolSource = plan.sources.find((source) => source.source.toLowerCase().includes("protocols.io"));
+  const protocolStep = plan.steps.find((step) => step.source.toLowerCase().includes("protocol"));
+
+  return {
+    hasProtocolSource: Boolean(protocolSource || protocolStep),
+    label: protocolSource?.title || protocolStep?.title || "Protocol-linked plan context",
+    source: protocolSource?.source || protocolStep?.source || null,
+  };
+}
+
 export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
   const primaryModel = useMemo(() => moleculeForPlan(plan), [plan]);
   const presets = useMemo(() => comparatorModelsForPlan(plan, primaryModel), [plan, primaryModel]);
+  const protocolContext = useMemo(() => protocolContextForPlan(plan), [plan]);
   const [presetIndex, setPresetIndex] = useState(0);
   const [mode, setMode] = useState<"2d" | "3d">("3d");
   const [rotation, setRotation] = useState(18);
@@ -199,21 +211,28 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
             </p>
           </div>
         </div>
-        <div className="flex rounded-full border border-border bg-muted/40 p-1 text-[11px]">
-          <button
-            type="button"
-            onClick={() => setMode("2d")}
-            className={`rounded-full px-2.5 py-1 ${mode === "2d" ? "bg-panel shadow-sm" : "text-muted-foreground"}`}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("3d")}
-            className={`rounded-full px-2.5 py-1 ${mode === "3d" ? "bg-panel shadow-sm" : "text-muted-foreground"}`}
-          >
-            3D
-          </button>
+        <div className="flex items-center gap-2">
+          {protocolContext.hasProtocolSource && (
+            <div className="rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] text-primary">
+              Protocol source: {protocolContext.source}
+            </div>
+          )}
+          <div className="flex rounded-full border border-border bg-muted/40 p-1 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setMode("2d")}
+              className={`rounded-full px-2.5 py-1 ${mode === "2d" ? "bg-panel shadow-sm" : "text-muted-foreground"}`}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("3d")}
+              className={`rounded-full px-2.5 py-1 ${mode === "3d" ? "bg-panel shadow-sm" : "text-muted-foreground"}`}
+            >
+              3D
+            </button>
+          </div>
         </div>
       </header>
 
@@ -337,6 +356,11 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
               Experimental implication
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">{model.note}</p>
+            {protocolContext.hasProtocolSource && (
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                This view is anchored to the active protocol context: {protocolContext.label}.
+              </p>
+            )}
             <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
               {model.editableHint || "Drag atoms on the canvas or tune their coordinates to test alternate structural arrangements during planning."}
             </p>

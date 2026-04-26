@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BookOpen, DollarSign, ExternalLink, MessageSquareWarning, Send, ShieldCheck } from "lucide-react";
 import {
   budgetRegions,
@@ -18,7 +18,9 @@ function referenceHref(source: string, uri?: string) {
   }
 
   const label = source.toLowerCase();
-  if (label.includes("protocols.io")) return "https://www.protocols.io/";
+  if (label.includes("protocols.io")) {
+    return "https://www.protocols.io/";
+  }
   if (label.includes("bio-protocol")) return "https://bio-protocol.org/";
   if (label.includes("thermofisher")) return "https://www.thermofisher.com/";
   if (label.includes("sigma")) return "https://www.sigmaaldrich.com/";
@@ -84,19 +86,12 @@ export function ContextStore({
         </div>
         <div className="mb-2 text-xs font-medium text-foreground">{plan.novelty.signal}</div>
         <p className="text-xs text-muted-foreground leading-relaxed mb-4">{plan.novelty.summary}</p>
-        <ul className="space-y-2.5">
+        <ul>
           {plan.novelty.references.map((reference) => (
-            <li key={`${reference.title}-${reference.source}`} className="rounded-xl border border-border bg-muted/25 p-3 text-xs">
-              <a
-                href={referenceHref(reference.source, reference.uri)}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-foreground hover:text-primary leading-snug flex items-start gap-1"
-              >
-                <span>{reference.title}</span>
-                <ExternalLink className="size-3 mt-0.5 shrink-0" />
+            <li key={reference.source}>
+              <a href={referenceHref(reference.source, reference.uri)} target="_blank" rel="noopener noreferrer">
+                {reference.source}
               </a>
-              <div className="text-[11px] text-muted-foreground mt-1">{reference.source}</div>
             </li>
           ))}
         </ul>

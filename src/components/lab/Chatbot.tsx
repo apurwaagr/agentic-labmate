@@ -16,7 +16,7 @@ const starterPrompts = [
   "How did prior scientist reviews change this plan?",
 ];
 
-function buildFallbackReply(question: string, plan: ExperimentPlan, reviews: ReviewRecord[]) {
+async function buildFallbackReply(question: string, plan: ExperimentPlan, reviews: ReviewRecord[]) {
   const lower = question.toLowerCase();
   const firstGate = plan.validation.decisionGates[0] || "Review the first protocol validation gate before committing resources.";
   const firstRiskyMaterial = [...plan.materials].sort((a, b) => b.unitCostUsd - a.unitCostUsd)[0];
@@ -161,11 +161,12 @@ export function Chatbot({
       ]);
     } catch {
       setStatus("offline");
+      const fallbackReply = await buildFallbackReply(trimmed, plan, reviews);
       setMessages((current) => [
         ...current,
         {
           role: "agent",
-          text: buildFallbackReply(trimmed, plan, reviews),
+          text: fallbackReply,
           citations: plan.sources.slice(0, 2).map((source) => ({
             title: source.title,
             source: source.source,

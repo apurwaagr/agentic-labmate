@@ -215,6 +215,20 @@ export type MoleculeModel = {
   bonds: { from: string; to: string }[];
 };
 
+function planSearchText(plan: ExperimentPlan) {
+  return [
+    plan.project,
+    plan.hypothesis,
+    plan.plainEnglish,
+    plan.domain,
+    ...plan.materials.map((item) => `${item.name} ${item.supplier}`),
+    ...plan.steps.map((step) => `${step.title} ${step.detail} ${step.source}`),
+    ...plan.sources.map((source) => `${source.title} ${source.source}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 export const sampleHypotheses = [
   {
     id: "diagnostics",
@@ -244,6 +258,147 @@ export const sampleHypotheses = [
 
 export function moleculeForPlan(plan: ExperimentPlan): MoleculeModel {
   const domain = plan.domain.toLowerCase();
+  const searchText = planSearchText(plan);
+  const protocolLinked = searchText.includes("protocols.io");
+
+  if (searchText.includes("trehalose")) {
+    return {
+      name: "Trehalose",
+      formula: "C12H22O11",
+      note: protocolLinked
+        ? "Representative cryoprotectant inferred from the active plan and protocol-linked source trail."
+        : "Representative cryoprotectant in the active plan.",
+      editableHint: "Scientists can reposition atoms or adjust depth to compare alternative cryoprotectant conformations during discussion.",
+      atoms: [
+        { id: "c1", element: "C", x: -1.2, y: -0.1, z: 0.2 },
+        { id: "o1", element: "O", x: -0.4, y: -0.8, z: -0.1 },
+        { id: "c2", element: "C", x: 0.4, y: -0.2, z: 0.5 },
+        { id: "o2", element: "O", x: 1.2, y: -0.9, z: 0.1 },
+        { id: "c3", element: "C", x: 1.1, y: 0.9, z: -0.2 },
+        { id: "o3", element: "O", x: 0.1, y: 1.4, z: -0.5 },
+        { id: "c4", element: "C", x: -0.9, y: 0.9, z: -0.1 },
+        { id: "o4", element: "O", x: -1.8, y: 0.3, z: 0.4 },
+      ],
+      bonds: [
+        { from: "c1", to: "o1" },
+        { from: "o1", to: "c2" },
+        { from: "c2", to: "o2" },
+        { from: "c2", to: "c3" },
+        { from: "c3", to: "o3" },
+        { from: "o3", to: "c4" },
+        { from: "c4", to: "o4" },
+        { from: "c4", to: "c1" },
+      ],
+    };
+  }
+
+  if (searchText.includes("dmso")) {
+    return {
+      name: "DMSO",
+      formula: "C2H6OS",
+      note: "Control cryoprotectant inferred directly from the plan materials and freeze-media setup.",
+      editableHint: "Use this control structure to compare whether the intervention story really differs from the standard cryopreservation baseline.",
+      atoms: [
+        { id: "s1", element: "S", x: 0, y: 0, z: 0.2 },
+        { id: "o1", element: "O", x: 1.1, y: -0.4, z: 0.3 },
+        { id: "c1", element: "C", x: -1.1, y: -0.2, z: -0.1 },
+        { id: "c2", element: "C", x: 0.1, y: 1.2, z: -0.2 },
+      ],
+      bonds: [
+        { from: "s1", to: "o1" },
+        { from: "s1", to: "c1" },
+        { from: "s1", to: "c2" },
+      ],
+    };
+  }
+
+  if (searchText.includes("c-reactive protein") || searchText.includes("crp")) {
+    return {
+      name: "C-reactive protein epitope target",
+      formula: "Protein target",
+      note: protocolLinked
+        ? "Assay target cue inferred from the current plan and protocol-linked references."
+        : "Simplified structural cue for the assay target rather than a full atomistic model.",
+      editableHint: "Use this as an editable assay cue to talk through binding orientation and surface-access assumptions.",
+      atoms: [
+        { id: "n1", element: "N", x: -1.5, y: 0, z: 0.4 },
+        { id: "c1", element: "C", x: -0.4, y: -0.7, z: 0 },
+        { id: "c2", element: "C", x: 0.8, y: -0.1, z: -0.4 },
+        { id: "o1", element: "O", x: 1.8, y: -0.8, z: 0.1 },
+        { id: "s1", element: "S", x: 0.5, y: 1.2, z: 0.2 },
+      ],
+      bonds: [
+        { from: "n1", to: "c1" },
+        { from: "c1", to: "c2" },
+        { from: "c2", to: "o1" },
+        { from: "c2", to: "s1" },
+      ],
+    };
+  }
+
+  if (searchText.includes("acetate")) {
+    return {
+      name: "Acetate",
+      formula: "C2H3O2-",
+      note: protocolLinked
+        ? "Representative product molecule inferred from the active protocol-backed carbon-fixation plan."
+        : "Representative product molecule for the carbon-fixation workflow.",
+      editableHint: "Adjust the view to inspect the product geometry and annotate alternative reaction-state ideas.",
+      atoms: [
+        { id: "c1", element: "C", x: -0.8, y: 0.2, z: 0.2 },
+        { id: "c2", element: "C", x: 0.4, y: -0.1, z: -0.1 },
+        { id: "o1", element: "O", x: 1.5, y: 0.5, z: 0.1 },
+        { id: "o2", element: "O", x: 0.6, y: -1.3, z: -0.3 },
+      ],
+      bonds: [
+        { from: "c1", to: "c2" },
+        { from: "c2", to: "o1" },
+        { from: "c2", to: "o2" },
+      ],
+    };
+  }
+
+  if (searchText.includes("co2") || searchText.includes("carbon dioxide")) {
+    return {
+      name: "Carbon dioxide",
+      formula: "CO2",
+      note: "Substrate cue inferred from the reactor protocol and gas-feed steps in the active plan.",
+      editableHint: "Use this substrate view to compare feed and product logic before accepting the benchmark claim.",
+      atoms: [
+        { id: "o1", element: "O", x: -1.1, y: 0, z: 0.1 },
+        { id: "c1", element: "C", x: 0, y: 0, z: -0.1 },
+        { id: "o2", element: "O", x: 1.1, y: 0, z: 0.1 },
+      ],
+      bonds: [
+        { from: "o1", to: "c1" },
+        { from: "c1", to: "o2" },
+      ],
+    };
+  }
+
+  if (searchText.includes("fitc-dextran") || searchText.includes("dextran")) {
+    return {
+      name: "FITC-dextran assay cue",
+      formula: "Assay marker",
+      note: protocolLinked
+        ? "Assay marker inferred from the active permeability protocol and supporting references."
+        : "Simplified visual cue for the active experiment's representative molecular system.",
+      editableHint: "Scientists can drag atoms or tune coordinates to sketch alternative assay-state interpretations.",
+      atoms: [
+        { id: "c1", element: "C", x: -1.1, y: 0.1, z: 0.2 },
+        { id: "o1", element: "O", x: -0.2, y: -0.8, z: 0 },
+        { id: "c2", element: "C", x: 0.9, y: -0.1, z: 0.3 },
+        { id: "n1", element: "N", x: 1.5, y: 0.9, z: -0.2 },
+        { id: "o2", element: "O", x: -0.4, y: 1, z: -0.3 },
+      ],
+      bonds: [
+        { from: "c1", to: "o1" },
+        { from: "o1", to: "c2" },
+        { from: "c2", to: "n1" },
+        { from: "c1", to: "o2" },
+      ],
+    };
+  }
 
   if (domain.includes("cell biology")) {
     return {
@@ -408,8 +563,30 @@ async function readJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const API_TIMEOUT_MS = 4500;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Local API timed out after ${API_TIMEOUT_MS / 1000}s. Make sure the mock API is running on port 8787.`);
+    }
+
+    throw new Error("Local API is unavailable on port 8787. Start it with `npm run api` or use `npm run dev` to launch both services.");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 export async function fetchExperimentPlan(hypothesis: string): Promise<{ experiment: ExperimentPlan }> {
-  const response = await fetch("/api/experiments/plan", {
+  const response = await fetchWithTimeout("/api/experiments/plan", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -427,7 +604,7 @@ export async function fetchChatReply(
   plan?: ExperimentPlan,
   reviews?: ReviewRecord[],
 ): Promise<ChatReply> {
-  const response = await fetch("/api/chat", {
+  const response = await fetchWithTimeout("/api/chat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -455,12 +632,12 @@ export async function fetchChatReply(
 }
 
 export async function fetchReviews(experimentId: string): Promise<ReviewRecord[]> {
-  const response = await fetch(`/api/reviews?experimentId=${encodeURIComponent(experimentId)}`);
+  const response = await fetchWithTimeout(`/api/reviews?experimentId=${encodeURIComponent(experimentId)}`);
   return readJson<ReviewRecord[]>(response);
 }
 
 export async function createReview(review: ReviewRecord): Promise<ReviewRecord> {
-  const response = await fetch("/api/reviews", {
+  const response = await fetchWithTimeout("/api/reviews", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -472,12 +649,12 @@ export async function createReview(review: ReviewRecord): Promise<ReviewRecord> 
 }
 
 export async function fetchApiContracts(): Promise<ApiContract[]> {
-  const response = await fetch("/api/contracts");
+  const response = await fetchWithTimeout("/api/contracts");
   return readJson<ApiContract[]>(response);
 }
 
 export async function fetchKnowledgeGraphContext(hypothesis?: string): Promise<KnowledgeGraphContext> {
   const query = hypothesis ? `?hypothesis=${encodeURIComponent(hypothesis)}` : "";
-  const response = await fetch(`/api/knowledge-graph/context${query}`);
+  const response = await fetchWithTimeout(`/api/knowledge-graph/context${query}`);
   return readJson<KnowledgeGraphContext>(response);
 }
