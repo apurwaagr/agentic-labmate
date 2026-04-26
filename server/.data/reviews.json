@@ -2,6 +2,32 @@
   {
     "experimentId": "cell-biology-trehalose",
     "section": "General",
+    "reviewer": "Scientist",
+    "correction": "I need to improve the amount of DMSO used",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "Replacing sucrose with trehalose as a cryoprotectant in the freezing medium will increase post-thaw viability of HeLa cells by at least 15 percentage points compared to the standard DMSO protocol, due to trehalose’s superior membrane stabilization at low temperatures.\nIn plain English: can we keep more cells alive when freezing them by swapping one preservative for another?",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
+    "reviewer": "Scientist",
+    "correction": "I need to improve the amount of DMSO used",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "Replacing sucrose with trehalose as a cryoprotectant in the freezing medium will increase post-thaw viability of HeLa cells by at least 15 percentage points compared to the standard DMSO protocol, due to trehalose’s superior membrane stabilization at low temperatures.\nIn plain English: can we keep more cells alive when freezing them by swapping one preservative for another?",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
     "reviewer": "Scientist Apurwa",
     "correction": "learn more",
     "severity": "medium",

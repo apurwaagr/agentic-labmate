@@ -11,6 +11,7 @@ import { ComparisonCard } from "@/components/lab/ComparisonCard";
 import { Chatbot } from "@/components/lab/Chatbot";
 import { PhaseTracker } from "@/components/lab/PhaseTracker";
 import { ValidationCard } from "@/components/lab/ValidationCard";
+import { ScientistWorkbenchCard } from "@/components/lab/ScientistWorkbenchCard";
 import {
   budgetRegionByCode,
   fetchExperimentPlan,
@@ -326,11 +327,6 @@ function buildReferenceProjectBundle() {
   return { project, plan, reviews };
 }
 
-const PROJECTS_STORAGE_KEY = "agentic-labmate-projects";
-const PLANS_STORAGE_KEY = "agentic-labmate-plans";
-const ACTIVE_PROJECT_STORAGE_KEY = "agentic-labmate-active-project";
-const BUDGET_REGION_STORAGE_KEY = "agentic-labmate-budget-region";
-
 type MainTab = "protocol" | "budget" | "timeline" | "validation";
 
 const TAB_CONFIG: { id: MainTab; label: string; icon: ReactNode }[] = [
@@ -381,65 +377,6 @@ const Index = () => {
   const [contextOpen, setContextOpen] = useState(false);
   const [activeHypothesisDraft, setActiveHypothesisDraft] = useState("");
   const logIntervalRef = useRef<number | null>(null);
-  // Prevents save effects from overwriting localStorage before the initial load has completed.
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    try {
-      const storedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
-      const storedActiveId = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-      const storedPlans = localStorage.getItem(PLANS_STORAGE_KEY);
-
-      if (storedProjects) {
-        const parsed = JSON.parse(storedProjects) as LabProject[];
-        setProjects(parsed);
-        if (parsed.length > 0) {
-          setComposerOpen(false);
-        }
-      }
-
-      if (storedPlans) {
-        setPlansByProject(JSON.parse(storedPlans) as Record<string, ExperimentPlan>);
-      }
-
-      if (storedActiveId) {
-        setActiveProjectId(storedActiveId);
-      }
-
-      const storedBudgetRegion = localStorage.getItem(BUDGET_REGION_STORAGE_KEY);
-      if (storedBudgetRegion) {
-        setBudgetRegion(budgetRegionByCode(storedBudgetRegion));
-      }
-    } catch {
-      setProjects([]);
-    } finally {
-      setInitialized(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!initialized) return;
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
-  }, [initialized, projects]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(plansByProject));
-  }, [initialized, plansByProject]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    if (activeProjectId) {
-      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId);
-    } else {
-      localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
-    }
-  }, [initialized, activeProjectId]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    localStorage.setItem(BUDGET_REGION_STORAGE_KEY, budgetRegion.code);
-  }, [initialized, budgetRegion]);
 
   useEffect(() => {
     return () => {
@@ -831,7 +768,7 @@ const Index = () => {
                           onClick={loadReferenceProject}
                           className="inline-flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-5 py-3 text-sm font-medium text-accent shadow-sm hover:bg-accent hover:text-accent-foreground"
                         >
-                          Load full reference project
+                          Load demo reference project (static)
                         </button>
                         {!workspaceEmpty && (
                           <button
@@ -1047,7 +984,10 @@ const Index = () => {
                   <TimelineCard phases={activePlan.timeline} />
                 )}
                 {activeTab === "validation" && (
-                  <ValidationCard validation={activePlan.validation} />
+                  <div className="space-y-4">
+                    <ValidationCard validation={activePlan.validation} />
+                    <ScientistWorkbenchCard plan={activePlan} />
+                  </div>
                 )}
               </>
             )}

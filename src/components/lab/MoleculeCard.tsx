@@ -225,9 +225,7 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
   const [resolvedCids, setResolvedCids] = useState<Record<string, number>>({}); // key = resolvedKey(name)
   const [resolvingNames, setResolvingNames] = useState<Set<string>>(new Set());
   const [active3D, setActive3D] = useState<{ cid: number; name: string } | null>(null);
-  const [annotation, setAnnotation] = useState(() => {
-    try { return localStorage.getItem(`mol-note-${plan.id}`) || ""; } catch { return ""; }
-  });
+  const [annotation, setAnnotation] = useState("");
 
   const visual = domainVisual(plan.domain);
   const materials = plan.materials;
@@ -419,10 +417,7 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
 
         <textarea
           value={annotation}
-          onChange={e => {
-            setAnnotation(e.target.value);
-            try { localStorage.setItem(`mol-note-${plan.id}`, e.target.value); } catch { /* ignore */ }
-          }}
+            onChange={(e) => setAnnotation(e.target.value)}
           placeholder="Scientist note — structural observations, alternative compounds, concerns…"
           rows={2}
           className="w-full rounded-xl border border-border bg-panel px-3 py-2.5 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"

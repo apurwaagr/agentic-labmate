@@ -240,6 +240,12 @@ function detectDomain(hypothesis) {
   };
 }
 
+function generateExperimentId(domainId = "experiment") {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${domainId}-${ts}-${rand}`;
+}
+
 function extractText(responseJson) {
   const parts = responseJson?.candidates?.[0]?.content?.parts || [];
   return parts
@@ -340,6 +346,37 @@ function directResourceUri(source = "", title = "", hypothesis = "") {
   }
 
   return `https://${source || "pubmed.ncbi.nlm.nih.gov"}`;
+}
+
+function isFigureLikeUri(uri = "") {
+  const lower = String(uri).toLowerCase();
+  return /\/fig(ure)?s?\b|#fig|\bfig\.|\/graphic\/|\/image\//.test(lower)
+    || /\.(png|jpg|jpeg|gif|svg)(\?|$)/.test(lower);
+}
+
+function sanitizedEvidenceUri(item) {
+  if (!item) return "";
+  if (item.doi) {
+    return `https://doi.org/${String(item.doi).replace(/^https?:\/\/doi.org\//i, "")}`;
+  }
+
+  const raw = item.url || item.uri || "";
+  if (!raw) {
+    return directResourceUri(item.source || "", item.title || "", "");
+  }
+
+  try {
+    const parsed = new URL(raw);
+    // Strip fragment-only deep links that frequently target figures/anchors.
+    parsed.hash = "";
+    const cleaned = parsed.toString();
+    if (isFigureLikeUri(cleaned)) {
+      return directResourceUri(item.source || hostLabel(cleaned), item.title || "", "");
+    }
+    return cleaned;
+  } catch {
+    return raw;
+  }
 }
 
 function buildBudget(materials, budget, timeline, domainName) {
@@ -729,6 +766,7 @@ async function resolveCompoundVisual(name) {
 function hypothesisParseFallback(hypothesis) {
   const domain = detectDomain(hypothesis);
   const lower = hypothesis.toLowerCase();
+  const compact = hypothesis.replace(/\s+/g, " ").trim();
 
   if (/(gold nanoparticle|nanoparticle|aunp|turkevich|trisodium citrate|chloroauric|haucl4|citrate-to-gold)/.test(lower)) {
     return {
@@ -743,21 +781,26 @@ function hypothesisParseFallback(hypothesis) {
     };
   }
 
+  const ifClause = compact.match(/\bif\b\s+(.+?)\s*(?:,\s*then\b|\bthen\b|\bwill\b|\bwould\b|\bmay\b|\bcan\b)/i)?.[1]?.trim();
+  const firstClause = compact.split(/[.;]/)[0]?.trim() || compact;
   const inferredIntervention =
-    /(crispr|cas9|grna|sgRNA)/.test(lower)
-      ? "CRISPR-Cas9 perturbation with target-specific guide RNA"
-      : /(inhibitor|agonist|compound|drug|treatment)/.test(lower)
-        ? "Primary treatment condition extracted from hypothesis"
-        : "Primary intervention extracted from hypothesis";
+    ifClause
+      ? ifClause
+      : /(crispr|cas9|grna|sgRNA)/.test(lower)
+        ? "CRISPR-Cas9 perturbation with target-specific guide RNA"
+        : firstClause;
 
+  const endpointClause = compact.match(/\b(will|would|may|can|results? in|lead(?:s)? to)\b\s+(.+?)\s*(?:\.|;|$)/i)?.[2]?.trim();
   const inferredOutcome =
-    /(viability|survival)/.test(lower)
-      ? "Cell viability change vs matched control"
-      : /(expression|rna|transcript|protein)/.test(lower)
-        ? "Target molecular readout change vs matched control"
-        : /(size|diameter|nanometer|nm)/.test(lower)
-          ? "Particle size and distribution vs target threshold"
-          : "Primary measured outcome";
+    endpointClause
+      ? endpointClause
+      : /(viability|survival)/.test(lower)
+        ? "Cell viability change vs matched control"
+        : /(expression|rna|transcript|protein)/.test(lower)
+          ? "Target molecular readout change vs matched control"
+          : /(size|diameter|nanometer|nm)/.test(lower)
+            ? "Particle size and distribution vs target threshold"
+            : "Primary measured outcome";
 
   return {
     hypothesis,
@@ -992,16 +1035,82 @@ function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
   return candidates.slice(0, 6);
 }
 
+async function inferMaterialCandidatesWithGemini(parsed, hypothesis, evidencePack) {
+  if (!geminiApiKey) {
+    return [];
+  }
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      compounds: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            name: { type: "STRING" },
+            role: { type: "STRING", enum: ["reagent", "intermediate", "product", "control"] },
+            confidence: { type: "STRING", enum: ["low", "medium", "high"] },
+          },
+          required: ["name", "role", "confidence"],
+        },
+      },
+    },
+    required: ["compounds"],
+  };
+
+  const prompt = `
+Extract likely chemical/material entities from this hypothesis for procurement and molecular visualization.
+
+Requirements:
+- Return 4-10 entries.
+- Prefer concrete, PubChem-resolvable names (e.g., "Trehalose", "Dimethyl sulfoxide", "Carbon dioxide").
+- Avoid generic phrases like "custom experimental plan", "workflow", "assay", "control arm", "outcome".
+- Include key control reagents if explicitly present.
+- Do not include instruments/equipment unless they are actual compounds.
+
+Hypothesis:
+${hypothesis}
+
+Parsed fields:
+${JSON.stringify({
+    intervention: parsed.intervention,
+    subject: parsed.subject,
+    outcome: parsed.outcome,
+    mechanism: parsed.mechanism,
+    control: parsed.control,
+  })}
+
+Evidence titles:
+${evidencePack.items.slice(0, 6).map((item) => `- ${item.title}`).join("\n")}
+
+Return JSON only.
+`;
+
+  try {
+    const { data } = await callGemini({ prompt, schema, grounded: false });
+    const extracted = Array.isArray(data?.compounds) ? data.compounds : [];
+    const out = [];
+    const seen = new Set();
+
+    for (const row of extracted) {
+      const name = String(row?.name || "").trim();
+      if (!name || name.length < 2 || name.length > 80) continue;
+      if (isGenericNonCompoundLabel(name)) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+
+    return out.slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
 function evidenceUrl(item) {
-  if (item.url) {
-    return item.url;
-  }
-
-  if (item.doi) {
-    return `https://doi.org/${item.doi}`;
-  }
-
-  return "";
+  return sanitizedEvidenceUri(item);
 }
 
 function tokenize(text = "") {
@@ -1068,6 +1177,22 @@ function normalizeEvidence(query, item) {
     ...item,
     score,
   };
+}
+
+function isFigureLikeReferenceTitle(title = "") {
+  const t = String(title || "").trim();
+  if (!t) return true;
+  return /^(figure|fig\.?|table|supplementary figure|supplementary table)\b/i.test(t)
+    || /figure\s*\d+\s*[\u2014\-:]?\s*figure supplement/i.test(t)
+    || /\bfigure supplement\b/i.test(t);
+}
+
+function isUsableEvidenceItem(item) {
+  if (!item) return false;
+  if (isFigureLikeReferenceTitle(item.title)) return false;
+  const uri = evidenceUrl(item);
+  if (!uri) return false;
+  return true;
 }
 
 async function fetchOpenAlexEvidence(hypothesis) {
@@ -1220,10 +1345,13 @@ async function retrieveEvidencePack(hypothesis) {
     deduped.push(item);
   }
 
-  deduped.sort((left, right) => right.score - left.score || (right.year || 0) - (left.year || 0));
+  const quality = deduped.filter(isUsableEvidenceItem);
+  const ranked = quality.length > 0 ? quality : deduped;
+
+  ranked.sort((left, right) => right.score - left.score || (right.year || 0) - (left.year || 0));
 
   return {
-    items: deduped.slice(0, 8),
+    items: ranked.slice(0, 8),
     providers: settled.map((result, index) => ({
       name: index === 0 ? "openalex" : index === 1 ? "crossref" : "protocols.io",
       ok: result.status === "fulfilled",
@@ -1232,7 +1360,16 @@ async function retrieveEvidencePack(hypothesis) {
 }
 
 function evidenceNovelty(hypothesis, evidencePack) {
-  const top = evidencePack.items.slice(0, 3);
+  const top = evidencePack.items.filter(isUsableEvidenceItem).slice(0, 3);
+
+  if (top.length === 0) {
+    return {
+      signal: "not found",
+      summary: "Retrieved references were low quality or non-citable entries, so fallback publication references are shown. Validate manually before protocol execution.",
+      references: fallbackPublicationReferences(detectDomain(hypothesis).name).slice(0, 3),
+    };
+  }
+
   const topScore = top[0]?.score || 0;
 
   let signal = "not found";
@@ -1252,16 +1389,20 @@ function evidenceNovelty(hypothesis, evidencePack) {
   return {
     signal,
     summary,
-    references: top.map((item) => ({
-      title: item.title,
-      source: item.source,
-      uri: evidenceUrl(item),
-    })),
+    references: top
+      .map((item) => ({
+        title: item.title,
+        source: item.source,
+        uri: evidenceUrl(item),
+      }))
+      .filter((ref) => Boolean(ref.uri)),
   };
 }
 
 async function buildMaterialsFromEvidence(parsed, hypothesis, evidencePack) {
-  const candidates = inferMaterialCandidates(parsed, hypothesis, evidencePack);
+  const heuristicCandidates = inferMaterialCandidates(parsed, hypothesis, evidencePack);
+  const aiCandidates = await inferMaterialCandidatesWithGemini(parsed, hypothesis, evidencePack);
+  const candidates = Array.from(new Set([...aiCandidates, ...heuristicCandidates])).slice(0, 8);
   const compounds = await Promise.all(candidates.map((label) => fetchPubChemCompoundByName(label).catch(() => null)));
   const fallbackSource = evidencePack.items[0]?.source || "Literature evidence";
 
@@ -1443,7 +1584,9 @@ function stepQuantity(label = "", units = "") {
 function refForStep(evidencePack, stepIndex) {
   const items = evidencePack.items;
   if (!items || items.length === 0) return null;
-  return items[stepIndex % items.length] || items[0];
+  const usable = items.filter((item) => Boolean(sanitizedEvidenceUri(item)));
+  if (usable.length === 0) return items[stepIndex % items.length] || items[0];
+  return usable[stepIndex % usable.length] || usable[0];
 }
 
 /** Domain-specific protocol "spine" — returns ordered step templates tuned per experimental family */
@@ -1899,7 +2042,7 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
         quantity: tpl.quantity,
         duration: tpl.duration,
         source:   ref?.source || "Literature",
-        sourceUri: ref?.url || (ref?.doi ? `https://doi.org/${ref.doi}` : ""),
+        sourceUri: evidenceUrl(ref),
         sourceTitle: ref?.title || tpl.title,
         riskLevel:   tpl.riskLevel || "med",
         riskNote:    tpl.riskNote || "",
@@ -1923,7 +2066,7 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     quantity: "1 design review session (≈ 4 h)",
     duration: "4 h",
     source: ref0?.source || "Literature",
-    sourceUri: ref0?.url || (ref0?.doi ? `https://doi.org/${ref0.doi}` : ""),
+    sourceUri: evidenceUrl(ref0),
     sourceTitle: ref0?.title || "Retrieved precedent",
     riskLevel: "med",
     riskNote: "A mismatch between the proposed assay and the retrieved protocol family can invalidate all downstream steps.",
@@ -1945,7 +2088,7 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
       quantity: qty,
       duration: idx === 0 ? "2 h" : "1 h",
       source:   ref?.source || mat.supplier || "PubChem",
-      sourceUri: mat.sourceUri || ref?.url || (ref?.doi ? `https://doi.org/${ref.doi}` : "") || (mat.pubchemCid ? `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}` : ""),
+      sourceUri: mat.sourceUri || evidenceUrl(ref) || (mat.pubchemCid ? `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}` : ""),
       sourceTitle: ref?.title || mat.name,
       riskLevel:  isPrimary ? "med" : "low",
       riskNote:   isPrimary
@@ -1974,7 +2117,7 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     quantity: "Pilot n ≥ 3 replicates per arm",
     duration: "1–2 days",
     source:   refAssay?.source || "Literature",
-    sourceUri: refAssay?.url || (refAssay?.doi ? `https://doi.org/${refAssay.doi}` : ""),
+    sourceUri: evidenceUrl(refAssay),
     sourceTitle: refAssay?.title || "Primary assay reference",
     riskLevel: "high",
     riskNote: `Incorrect timing, normalisation, or control condition for ${assay} is the dominant scientific risk.`,
@@ -1996,7 +2139,7 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     quantity: "1 analysis pass (≈ 4 h)",
     duration: "4 h",
     source:   refBench?.source || "Literature",
-    sourceUri: refBench?.url || (refBench?.doi ? `https://doi.org/${refBench.doi}` : ""),
+    sourceUri: evidenceUrl(refBench),
     sourceTitle: refBench?.title || "Benchmark reference",
     riskLevel: "low",
     riskNote: "A plan can look scientifically plausible yet still fail if timing, variance, or procurement diverges from precedent.",
@@ -2058,6 +2201,7 @@ function buildDynamicBenchmark(totalDays, budget) {
 
 async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
   const domain = detectDomain(hypothesis);
+  const experimentId = generateExperimentId(domain.id);
   const parsed = await parseHypothesis(hypothesis);
   const evidencePack = await retrieveEvidencePack(hypothesis);
   const materials = await buildMaterialsFromEvidence(parsed, hypothesis, evidencePack);
@@ -2102,7 +2246,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
 
   return {
     experiment: {
-      id: domain.id,
+      id: experimentId,
       project: domain.project,
       hypothesis,
       plainEnglish: domain.plainEnglish,
@@ -2127,6 +2271,11 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
           "Pilot data do not separate intervention and control in a scientifically interpretable way.",
         ],
         decisionGates: steps.map((step) => step.decisionGate).filter(Boolean),
+        references: evidencePack.items.slice(0, 3).map((item) => ({
+          title: item.title,
+          source: item.source,
+          uri: evidenceUrl(item),
+        })),
       },
       reviewAdaptations: relatedReviews.map((review) => ({
         section: review.section,
@@ -2853,10 +3002,11 @@ function planFallback(hypothesis) {
 
 async function buildParsedPlan(hypothesis, relatedReviews) {
   const domain = detectDomain(hypothesis);
+  const experimentId = generateExperimentId(domain.id);
   const parsed = hypothesisParseFallback(hypothesis);
   const emptyEvidencePack = { items: [], providers: [] };
   const materials = await buildMaterialsFromEvidence(parsed, hypothesis, emptyEvidencePack);
-  const steps = buildDynamicSteps(parsed, emptyEvidencePack);
+  const steps = buildDynamicSteps(parsed, emptyEvidencePack, materials);
   const timeline = buildDynamicTimeline(steps);
   const budget = buildBudget(
     materials,
@@ -2875,7 +3025,7 @@ async function buildParsedPlan(hypothesis, relatedReviews) {
 
   return {
     experiment: {
-      id: domain.id,
+      id: experimentId,
       project: domain.project,
       hypothesis,
       plainEnglish: domain.plainEnglish,
@@ -2904,6 +3054,7 @@ async function buildParsedPlan(hypothesis, relatedReviews) {
           "Pilot data do not produce an interpretable signal.",
         ],
         decisionGates: steps.map((step) => step.decisionGate).filter(Boolean),
+        references: fallbackPublicationReferences(domain.name).slice(0, 3),
       },
       reviewAdaptations: relatedReviews.map((review) => ({
         section: review.section,
@@ -3258,7 +3409,16 @@ Output style:
       timeline,
       budget,
       benchmark: data.benchmark?.length ? data.benchmark : fallback.experiment.benchmark,
-      validation: data.validation || fallback.experiment.validation,
+      validation: {
+        ...(data.validation || fallback.experiment.validation),
+        references: (fallback.experiment.validation?.references?.length
+          ? fallback.experiment.validation.references
+          : references.slice(0, 3).map((item) => ({
+              title: item.title,
+              source: item.source,
+              uri: item.uri,
+            }))),
+      },
       reviewAdaptations: data.reviewAdaptations?.length
         ? data.reviewAdaptations
         : fallback.experiment.reviewAdaptations,

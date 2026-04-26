@@ -114,6 +114,20 @@ function staticSdfFallback(cid: number, label?: string): string | null {
   return null;
 }
 
+function fallbackImageSources(cid: number, label?: string): string[] {
+  const normalizedLabel = normalizedCompoundName(label);
+  const names = Array.from(new Set([label?.trim() || "", normalizedLabel].filter(Boolean)));
+
+  const urls = [
+    `https://pubchem.ncbi.nlm.nih.gov/image/imgsrv.fcgi?cid=${cid}&t=l`,
+    `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/PNG?image_size=large`,
+    ...names.map((name) => `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/PNG?image_size=large`),
+    ...names.map((name) => `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(name)}/image`),
+  ];
+
+  return Array.from(new Set(urls));
+}
+
 export function Molecule3DViewer({
   cid,
   className,
@@ -126,10 +140,12 @@ export function Molecule3DViewer({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer3D | null>(null);
   const sdfRef = useRef<string>("");
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "fallback" | "error">("loading");
   const [spinning, setSpinning] = useState(false);
   const [viewStyle, setViewStyle] = useState<ViewerStyle>("ballstick");
   const [used3D, setUsed3D] = useState(false);
+  const [fallbackSources, setFallbackSources] = useState<string[]>([]);
+  const [fallbackIndex, setFallbackIndex] = useState(0);
 
   // Apply current style without re-fetching SDF
   const applyStyle = useCallback((v: Viewer3D, style: ViewerStyle) => {
@@ -143,6 +159,8 @@ export function Molecule3DViewer({
     setStatus("loading");
     setSpinning(false);
     setUsed3D(false);
+    setFallbackSources([]);
+    setFallbackIndex(0);
     viewerRef.current = null;
     sdfRef.current = "";
 
@@ -200,6 +218,16 @@ export function Molecule3DViewer({
           }
         }
 
+        if (!sdf) {
+          const imageSources = fallbackImageSources(cid, label);
+          if (imageSources.length > 0) {
+            setFallbackSources(imageSources);
+            setFallbackIndex(0);
+            setStatus("fallback");
+            return;
+          }
+        }
+
         if (!sdf) throw new Error("No SDF available");
         if (!active || !hostRef.current || !window.$3Dmol) return;
 
@@ -250,6 +278,18 @@ export function Molecule3DViewer({
 
   const styleLabel = { ballstick: "Ball & Stick", stick: "Stick", sphere: "Space Fill" }[viewStyle];
   const unavailable = no3dReason(label);
+  const activeFallbackSrc = fallbackSources[fallbackIndex] || "";
+
+  function handleFallbackImageError() {
+    setFallbackIndex((current) => {
+      const next = current + 1;
+      if (next >= fallbackSources.length) {
+        setStatus("error");
+        return current;
+      }
+      return next;
+    });
+  }
 
   return (
     <div className={`relative overflow-hidden rounded-xl ${className ?? ""}`}>
@@ -265,6 +305,27 @@ export function Molecule3DViewer({
         <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-[#0d1117]">
           <div className="mb-2 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
           <span className="text-[11px] text-slate-400">Loading 3D conformer…</span>
+        </div>
+      )}
+
+      {/* Faux-3D 2D fallback */}
+      {status === "fallback" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-[radial-gradient(circle_at_30%_20%,#1f2937_0%,#0d1117_55%)] overflow-hidden">
+          {activeFallbackSrc ? (
+            <img
+              src={activeFallbackSrc}
+              alt={label ? `${label} structure` : "Molecule structure"}
+              onError={handleFallbackImageError}
+              className="max-h-[72%] max-w-[82%] object-contain drop-shadow-[0_22px_28px_rgba(0,0,0,0.65)]"
+              style={{ transform: "perspective(920px) rotateX(21deg) rotateY(-13deg) translateZ(0)" }}
+            />
+          ) : (
+            <div className="text-[11px] text-slate-400">Loading structure preview…</div>
+          )}
+
+          {/* Ground shadow to make the 2D structure feel spatial */}
+          <div className="absolute bottom-10 h-10 w-48 rounded-[999px] bg-black/35 blur-xl" />
+          <span className="mt-2 text-[11px] text-slate-400">2D structure rendered in faux-3D mode</span>
         </div>
       )}
 
@@ -328,8 +389,20 @@ export function Molecule3DViewer({
         </div>
       )}
 
+      {/* Controls bar (shown when faux-3D image is displayed) */}
+      {status === "fallback" && (
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between gap-1 rounded-b-xl bg-gradient-to-t from-[#0d1117]/90 to-transparent px-2.5 py-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {label && (
+              <span className="truncate max-w-[160px] text-[10px] text-slate-300 font-medium">{label}</span>
+            )}
+            <span className="shrink-0 rounded-full bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 text-[9px] text-amber-300">Faux 3D</span>
+          </div>
+        </div>
+      )}
+
       {/* Top-right: resize hint */}
-      {status === "ready" && (
+      {(status === "ready" || status === "fallback") && (
         <div className="absolute top-2 right-2 pointer-events-none">
           <Maximize2 className="size-3 text-white/20" />
         </div>

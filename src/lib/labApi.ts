@@ -90,6 +90,7 @@ export type ValidationPlan = {
   successCriteria: string;
   failureCriteria: string[];
   decisionGates: string[];
+  references?: SourceReference[];
 };
 
 export type ReviewAdaptation = {

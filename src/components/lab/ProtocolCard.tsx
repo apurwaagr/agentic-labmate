@@ -44,49 +44,17 @@ function toPointers(text?: string, max = 3) {
 
 export function ProtocolCard({ steps, materials = [], planId }: { steps: ProtocolStep[]; materials?: MaterialItem[]; planId: string }) {
   const [open, setOpen] = useState<string | null>(steps[0]?.id ?? null);
-  const [stepStatus, setStepStatus] = useState<Record<string, StepStatus>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`agentic-labmate-step-status-${planId}`) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [stepStatusDraft, setStepStatusDraft] = useState<Record<string, StepStatus>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`agentic-labmate-step-status-${planId}`) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [stepLogs, setStepLogs] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`agentic-labmate-step-logs-${planId}`) || "{}");
-    } catch {
-      return {};
-    }
-  });
-  const [stepLogDrafts, setStepLogDrafts] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`agentic-labmate-step-logs-${planId}`) || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [stepStatus, setStepStatus] = useState<Record<string, StepStatus>>({});
+  const [stepStatusDraft, setStepStatusDraft] = useState<Record<string, StepStatus>>({});
+  const [stepLogs, setStepLogs] = useState<Record<string, string>>({});
+  const [stepLogDrafts, setStepLogDrafts] = useState<Record<string, string>>({});
 
   function applyStatus(stepId: string, status: StepStatus) {
-    setStepStatus((current) => {
-      const next = { ...current, [stepId]: status };
-      localStorage.setItem(`agentic-labmate-step-status-${planId}`, JSON.stringify(next));
-      return next;
-    });
+    setStepStatus((current) => ({ ...current, [stepId]: status }));
   }
 
   function applyLog(stepId: string, log: string) {
-    setStepLogs((current) => {
-      const next = { ...current, [stepId]: log };
-      localStorage.setItem(`agentic-labmate-step-logs-${planId}`, JSON.stringify(next));
-      return next;
-    });
+    setStepLogs((current) => ({ ...current, [stepId]: log }));
   }
 
   const highRiskCount = steps.filter((s) => s.riskLevel === "high").length;

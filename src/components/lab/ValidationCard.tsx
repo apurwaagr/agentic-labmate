@@ -1,4 +1,4 @@
-import { CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, ShieldCheck, XCircle } from "lucide-react";
 import type { ValidationPlan } from "@/lib/labApi";
 
 /** Heuristic: gate text contains "fail", "no-go", "halt", "stop", "abort" → NO-GO */
@@ -108,6 +108,36 @@ export function ValidationCard({ validation }: { validation: ValidationPlan }) {
             ))}
           </ul>
         </div>
+
+        {/* Validation references */}
+        {validation.references && validation.references.length > 0 && (
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary flex items-center gap-1.5">
+              <ShieldCheck className="size-3" />Validation references
+            </div>
+            <ul className="space-y-1.5">
+              {validation.references.map((ref) => (
+                <li key={`${ref.title}-${ref.uri || ref.source}`} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  {ref.uri ? (
+                    <a
+                      href={ref.uri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline"
+                      title={ref.title}
+                    >
+                      <span className="text-foreground/85">{ref.title}</span>
+                      <span className="text-muted-foreground">({ref.source})</span>
+                      <ExternalLink className="size-3 opacity-70" />
+                    </a>
+                  ) : (
+                    <span className="text-[11px] text-foreground/85">{ref.title} ({ref.source})</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   );
