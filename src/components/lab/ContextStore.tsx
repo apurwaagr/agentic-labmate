@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BookOpen, DollarSign, ExternalLink, MessageSquareWarning, Send, ShieldCheck } from "lucide-react";
+import { BookOpen, ChevronDown, DollarSign, ExternalLink, Info, MessageSquareWarning, Send, ShieldCheck } from "lucide-react";
 import {
   budgetRegions,
   adjustedBudgetAmount,
@@ -47,6 +47,7 @@ export function ContextStore({
   const [section, setSection] = useState("General");
   const [correction, setCorrection] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assumptionsOpen, setAssumptionsOpen] = useState(false);
 
   async function submitReview() {
     const trimmed = correction.trim();
@@ -76,7 +77,7 @@ export function ContextStore({
   const scientistGaps = scientistGapsForPlan(plan);
 
   return (
-    <aside className="w-[390px] shrink-0 flex flex-col gap-4 p-4 border-l border-border bg-surface overflow-y-auto">
+    <aside className="w-full xl:w-[390px] shrink-0 flex flex-col gap-4 p-4 border-l border-border bg-surface overflow-y-auto h-full">
       <div className="rounded-2xl bg-panel border border-border p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -158,22 +159,34 @@ export function ContextStore({
           </div>
         </div>
         <div className="rounded-xl border border-border bg-primary-soft/60 p-3 text-xs text-foreground/85">
-          <div className="mb-1 flex items-center gap-2 font-medium text-primary">
-            <ShieldCheck className="size-3.5" />
-            Reliability and assumptions
-          </div>
-          <p className="text-muted-foreground leading-relaxed">{plan.budget.reliability || "Planning-grade estimate with operational overhead included."}</p>
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Display values are adjusted for the selected operating region using planning multipliers for procurement, shipping, and scientist labor. They are not a substitute for institution-specific quotes or tax treatment.
-          </p>
-          {plan.budget.assumptions && plan.budget.assumptions.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {plan.budget.assumptions.map((assumption) => (
-                <li key={assumption} className="text-[11px] leading-relaxed text-muted-foreground">
-                  {assumption}
-                </li>
-              ))}
-            </ul>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 text-left"
+            onClick={() => setAssumptionsOpen((v) => !v)}
+          >
+            <div className="flex items-center gap-2 font-semibold text-primary">
+              <Info className="size-3.5 shrink-0" />
+              Reliability and pricing assumptions
+            </div>
+            <ChevronDown className={`size-3.5 shrink-0 text-primary transition-transform duration-200 ${assumptionsOpen ? "rotate-180" : ""}`} />
+          </button>
+          <p className="mt-2 text-muted-foreground leading-relaxed">{plan.budget.reliability || "Planning-grade estimate with operational overhead included."}</p>
+          {assumptionsOpen && (
+            <div className="mt-3 space-y-1.5 border-t border-primary/20 pt-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Display values are adjusted for the selected operating region using planning multipliers for procurement, shipping, and scientist labor. They are not a substitute for institution-specific quotes or tax treatment.
+              </p>
+              {plan.budget.assumptions && plan.budget.assumptions.length > 0 && (
+                <ul className="mt-2 space-y-1.5">
+                  {plan.budget.assumptions.map((assumption, i) => (
+                    <li key={assumption} className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
+                      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">{i + 1}</span>
+                      {assumption}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </div>

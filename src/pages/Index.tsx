@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Beaker, ChevronRight, Leaf, Loader2, Plus, ShieldCheck, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Beaker, ChevronRight, Leaf, Loader2, Menu, PanelRightOpen, Plus, ShieldCheck, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { Navigator, type AgentLogItem, type ProjectListItem } from "@/components/lab/Navigator";
 import { ContextStore } from "@/components/lab/ContextStore";
 import { ProtocolCard } from "@/components/lab/ProtocolCard";
@@ -80,6 +80,8 @@ const Index = () => {
   const [budgetRegion, setBudgetRegion] = useState<BudgetRegion>(budgetRegionByCode("DE"));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const logIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -335,44 +337,77 @@ const Index = () => {
   const workspaceEmpty = !activeProject;
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface)))] flex">
-      <Navigator
-        projects={projects}
-        activeProjectId={activeProjectId}
-        onSelectProject={selectProject}
-        onCreateProject={() => {
-          resetDraftProject();
-          setComposerOpen(true);
-        }}
-        onDeleteProject={handleDeleteProject}
-        agentLogs={agentLogs}
-      />
+    <div className="min-h-screen bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface)))] flex relative overflow-hidden">
+
+      {/* ── Mobile nav backdrop ── */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+
+      {/* ── Left navigator (slide-in on mobile) ── */}
+      <div className={`fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out lg:relative lg:z-auto lg:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <Navigator
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onSelectProject={(id) => { selectProject(id); setNavOpen(false); }}
+          onCreateProject={() => { resetDraftProject(); setComposerOpen(true); setNavOpen(false); }}
+          onDeleteProject={handleDeleteProject}
+          agentLogs={agentLogs}
+        />
+      </div>
 
       <main className="flex-1 flex min-w-0 flex-col overflow-hidden">
-        <header className="border-b border-border bg-panel/90 px-6 py-4 backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                {activeProject ? `${activeProject.name} · ${activeProject.domain || "Custom workflow"}` : "Create an experiment project"}
+        <header className="border-b border-border bg-panel/90 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Hamburger — visible below lg */}
+              <button
+                type="button"
+                onClick={() => setNavOpen(true)}
+                className="flex size-9 items-center justify-center rounded-xl border border-border bg-muted/40 text-muted-foreground hover:bg-muted lg:hidden"
+                aria-label="Open navigation"
+              >
+                <Menu className="size-4" />
+              </button>
+              <div className="min-w-0">
+                <div className="truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {activeProject ? `${activeProject.name} · ${activeProject.domain || "Custom workflow"}` : "Create an experiment project"}
+                </div>
+                <h1 className="text-lg font-semibold tracking-tight sm:text-2xl">Scientific Planning Workbench</h1>
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">Scientific Planning Workbench</h1>
             </div>
-            <PhaseTracker
-              projectReady={Boolean(activeProject)}
-              noveltyReady={Boolean(activePlan?.novelty)}
-              planReady={Boolean(activePlan)}
-              loading={loading}
-              error={Boolean(error)}
-            />
+            <div className="flex items-center gap-2">
+              <PhaseTracker
+                projectReady={Boolean(activeProject)}
+                noveltyReady={Boolean(activePlan?.novelty)}
+                planReady={Boolean(activePlan)}
+                loading={loading}
+                error={Boolean(error)}
+              />
+              {/* Context panel toggle — visible below xl when plan is ready */}
+              {activePlan && (
+                <button
+                  type="button"
+                  onClick={() => setContextOpen((v) => !v)}
+                  className="flex size-9 items-center justify-center rounded-xl border border-border bg-muted/40 text-muted-foreground hover:bg-muted xl:hidden"
+                  aria-label="Toggle context panel"
+                >
+                  <PanelRightOpen className="size-4" />
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="mx-auto max-w-[1400px] space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="mx-auto max-w-[1400px] space-y-4 sm:space-y-5">
             {(composerOpen || workspaceEmpty) && (
               <section className="overflow-hidden rounded-[28px] border border-border bg-[radial-gradient(circle_at_top_left,_hsl(var(--accent-soft)),_transparent_35%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--surface)))] shadow-sm">
-                <div className="grid gap-0 xl:grid-cols-[1.15fr_0.85fr]">
-                  <div className="p-6 xl:p-8">
+                <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+                  <div className="p-5 lg:p-8">
                     <div className="mb-4 flex items-center gap-2">
                       <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
                         <Plus className="size-4" />
@@ -431,7 +466,7 @@ const Index = () => {
                     </div>
                   </div>
 
-                  <div className="border-t border-border bg-panel/70 p-6 xl:border-l xl:border-t-0 xl:p-8">
+                  <div className="border-t border-border bg-panel/70 p-5 lg:border-l lg:border-t-0 lg:p-8">
                     <div className="mb-4 text-sm font-semibold">What scientists need immediately</div>
                     <div className="grid gap-3">
                       {[
@@ -456,7 +491,7 @@ const Index = () => {
             {activeProject && (
               <>
                 <section className="rounded-[28px] border border-border bg-[radial-gradient(circle_at_top_right,_hsl(var(--primary-soft)),_transparent_30%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--panel)))] p-6 shadow-sm">
-                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="mb-3 flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
@@ -478,7 +513,7 @@ const Index = () => {
                     </div>
 
                     {activePlan && (
-                      <div className="grid grid-cols-3 gap-3 xl:w-[360px]">
+                      <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:w-[340px]">
                         <Metric label="Confidence" value={activePlan.metrics.confidence} tone="primary" icon={<ShieldCheck className="size-3.5" />} />
                         <Metric label="Novelty" value={activePlan.metrics.novelty} tone="accent" icon={<Sparkles className="size-3.5" />} />
                         <Metric label="Sustainability" value={activePlan.metrics.sustainability} tone="success" icon={<Leaf className="size-3.5" />} />
@@ -486,7 +521,7 @@ const Index = () => {
                     )}
                   </div>
 
-                  <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_auto]">
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
                     <textarea
                       value={activeProject.hypothesis}
                       onChange={(event) =>
@@ -497,7 +532,7 @@ const Index = () => {
                       }
                       className="min-h-28 rounded-2xl border border-border bg-panel px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
-                    <div className="flex flex-wrap gap-3 xl:flex-col">
+                    <div className="flex flex-wrap gap-2 lg:flex-col">
                       <button
                         type="button"
                         onClick={() => void generateForProject(activeProject.id, activeProject.hypothesis)}
@@ -528,7 +563,7 @@ const Index = () => {
                   </div>
                 </section>
 
-                <section className="grid gap-4 xl:grid-cols-4">
+                <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
                     <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Novelty</div>
                     <div className="text-sm font-medium">{activePlan?.novelty.signal || "Waiting"}</div>
@@ -572,7 +607,7 @@ const Index = () => {
               <>
                 <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
                 <ValidationCard validation={activePlan.validation} />
-                <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <SupplyChainCard plan={activePlan} budgetRegion={budgetRegion} />
                   <TimelineCard phases={activePlan.timeline} />
                 </div>
@@ -604,13 +639,33 @@ const Index = () => {
 
       {activePlan && activeProject && (
         <>
-          <ContextStore
-            plan={activePlan}
-            reviews={activeReviews}
-            onReviewAdded={handleReviewAdded}
-            budgetRegion={budgetRegion}
-            onBudgetRegionChange={(code) => setBudgetRegion(budgetRegionByCode(code))}
-          />
+          {/* ── Right context panel backdrop (mobile/tablet) ── */}
+          {contextOpen && (
+            <div
+              className="fixed inset-0 z-30 bg-black/40 xl:hidden"
+              onClick={() => setContextOpen(false)}
+            />
+          )}
+          {/* ── Context panel wrapper ── */}
+          <div className={`fixed inset-y-0 right-0 z-40 flex flex-col transition-transform duration-300 ease-in-out xl:relative xl:z-auto xl:translate-x-0 ${contextOpen ? "translate-x-0" : "translate-x-full"}`}>
+            <div className="flex items-center justify-between border-b border-border bg-panel/95 px-4 py-2 xl:hidden">
+              <span className="text-sm font-semibold">Lab Context</span>
+              <button
+                type="button"
+                onClick={() => setContextOpen(false)}
+                className="flex size-7 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <ContextStore
+              plan={activePlan}
+              reviews={activeReviews}
+              onReviewAdded={handleReviewAdded}
+              budgetRegion={budgetRegion}
+              onBudgetRegionChange={(code) => setBudgetRegion(budgetRegionByCode(code))}
+            />
+          </div>
           <Chatbot experimentId={activePlan.id} hypothesis={activeProject.hypothesis} plan={activePlan} reviews={activeReviews} />
         </>
       )}

@@ -320,25 +320,32 @@ export function moleculeForPlan(plan: ExperimentPlan): MoleculeModel {
   }
 
   if (searchText.includes("c-reactive protein") || searchText.includes("crp")) {
+    // CRP is a 115 kDa pentameric protein — it has no meaningful small-molecule sketch.
+    // The chemically correct entity to show for a CRP biosensor is the SAM linker:
+    // 3-Mercaptopropionic acid (3-MPA, PubChem CID 75763).
+    // The –SH end chemisorbs onto the electrode; the –COOH end activates via EDC/NHS
+    // for covalent anti-CRP IgG attachment.
     return {
-      name: "C-reactive protein epitope target",
-      formula: "Protein target",
+      name: "3-Mercaptopropionic acid (SAM linker)",
+      formula: "C3H6O2S · PubChem CID 75763",
       note: protocolLinked
-        ? "Assay target cue inferred from the current plan and protocol-linked references."
-        : "Simplified structural cue for the assay target rather than a full atomistic model.",
-      editableHint: "Use this as an editable assay cue to talk through binding orientation and surface-access assumptions.",
+        ? "The thiol SAM linker that covalently couples anti-CRP IgG to the electrode surface (protocol-linked). –SH end bonds to the electrode; –COOH end activates for EDC/NHS antibody coupling."
+        : "The thiol self-assembled monolayer (SAM) linker for anti-CRP functionalisation. –SH chemisorbs onto the electrode surface; –COOH is activated by EDC/NHS to covalently bind anti-CRP IgG. CRP (115 kDa protein) is the target — it cannot be sketched as a small molecule.",
+      editableHint: "Adjust the –COOH end orientation to assess steric accessibility for EDC/NHS coupling. The electrode–SAM interface controls functionalisation yield and antibody orientation, which directly sets the LoD.",
       atoms: [
-        { id: "n1", element: "N", x: -1.5, y: 0, z: 0.4 },
-        { id: "c1", element: "C", x: -0.4, y: -0.7, z: 0 },
-        { id: "c2", element: "C", x: 0.8, y: -0.1, z: -0.4 },
-        { id: "o1", element: "O", x: 1.8, y: -0.8, z: 0.1 },
-        { id: "s1", element: "S", x: 0.5, y: 1.2, z: 0.2 },
+        { id: "s1", element: "S",  x: -1.8, y:  0.0, z:  0.0 },  // thiol –SH (electrode bond)
+        { id: "c1", element: "C",  x: -0.7, y:  0.1, z:  0.0 },  // CH₂
+        { id: "c2", element: "C",  x:  0.4, y: -0.2, z:  0.0 },  // CH₂
+        { id: "c3", element: "C",  x:  1.5, y:  0.2, z:  0.0 },  // carboxyl carbon
+        { id: "o1", element: "O",  x:  2.2, y:  0.9, z:  0.1 },  // C=O
+        { id: "o2", element: "O",  x:  1.8, y: -0.9, z:  0.0 },  // –OH (EDC/NHS active ester site)
       ],
       bonds: [
-        { from: "n1", to: "c1" },
+        { from: "s1", to: "c1" },
         { from: "c1", to: "c2" },
-        { from: "c2", to: "o1" },
-        { from: "c2", to: "s1" },
+        { from: "c2", to: "c3" },
+        { from: "c3", to: "o1" },
+        { from: "c3", to: "o2" },
       ],
     };
   }
@@ -453,23 +460,26 @@ export function moleculeForPlan(plan: ExperimentPlan): MoleculeModel {
   }
 
   if (domain.includes("diagnostics")) {
+    // Default diagnostics SAM linker: 3-MPA (same as CRP biosensor pathway)
     return {
-      name: "C-reactive protein epitope target",
-      formula: "Protein target",
-      note: "Simplified structural cue for the assay target rather than a full atomistic model.",
-      editableHint: "Use this as an editable assay cue to talk through binding orientation and surface-access assumptions.",
+      name: "3-Mercaptopropionic acid (SAM linker)",
+      formula: "C3H6O2S · PubChem CID 75763",
+      note: "The thiol SAM linker used for antibody immobilisation on electrochemical biosensors. –SH bonds to the electrode; –COOH activates for EDC/NHS antibody coupling.",
+      editableHint: "Adjust the –COOH end orientation to assess steric accessibility for EDC/NHS coupling. The electrode–SAM interface controls functionalisation yield and antibody orientation.",
       atoms: [
-        { id: "n1", element: "N", x: -1.5, y: 0, z: 0.4 },
-        { id: "c1", element: "C", x: -0.4, y: -0.7, z: 0 },
-        { id: "c2", element: "C", x: 0.8, y: -0.1, z: -0.4 },
-        { id: "o1", element: "O", x: 1.8, y: -0.8, z: 0.1 },
-        { id: "s1", element: "S", x: 0.5, y: 1.2, z: 0.2 },
+        { id: "s1", element: "S",  x: -1.8, y:  0.0, z:  0.0 },
+        { id: "c1", element: "C",  x: -0.7, y:  0.1, z:  0.0 },
+        { id: "c2", element: "C",  x:  0.4, y: -0.2, z:  0.0 },
+        { id: "c3", element: "C",  x:  1.5, y:  0.2, z:  0.0 },
+        { id: "o1", element: "O",  x:  2.2, y:  0.9, z:  0.1 },
+        { id: "o2", element: "O",  x:  1.8, y: -0.9, z:  0.0 },
       ],
       bonds: [
-        { from: "n1", to: "c1" },
+        { from: "s1", to: "c1" },
         { from: "c1", to: "c2" },
-        { from: "c2", to: "o1" },
-        { from: "c2", to: "s1" },
+        { from: "c2", to: "c3" },
+        { from: "c3", to: "o1" },
+        { from: "c3", to: "o2" },
       ],
     };
   }

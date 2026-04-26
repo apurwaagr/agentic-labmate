@@ -40,7 +40,7 @@ export function Navigator({
   const liveAgentCount = agentLogs.filter((log) => log.state === "active").length;
 
   return (
-    <aside className="w-[300px] shrink-0 border-r border-border bg-[radial-gradient(circle_at_top,_hsl(var(--primary-soft)),_transparent_45%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--surface)))]">
+    <aside className="w-[280px] shrink-0 border-r border-border bg-[radial-gradient(circle_at_top,_hsl(var(--primary-soft)),_transparent_45%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--surface)))] h-full overflow-y-auto">
       <div className="flex h-full flex-col gap-5 px-4 py-5">
         <div className="rounded-2xl border border-border bg-panel/90 p-4 shadow-sm backdrop-blur">
           <div className="flex items-center gap-3">
