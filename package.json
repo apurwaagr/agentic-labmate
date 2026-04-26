@@ -7,6 +7,8 @@
     "dev": "sh -c 'node server/mock-api.mjs & vite'",
     "dev:ui": "vite",
     "api": "node server/mock-api.mjs",
+    "api:py": "./venv/bin/python -m backend.api_server",
+    "pipeline:py": "./venv/bin/python -m backend.pipeline",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

@@ -144,6 +144,8 @@ const Index = () => {
     if (activeProject && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
       void generateForProject(activeProject.id, activeProject.hypothesis);
     }
+    // generateForProject is intentionally excluded to avoid retrigger loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject, plansByProject, loading]);
 
   function clearLogInterval() {

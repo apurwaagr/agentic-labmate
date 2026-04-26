@@ -1,0 +1,4 @@
+groq
+pydantic
+requests
+python-dotenv
