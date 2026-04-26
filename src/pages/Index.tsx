@@ -4,6 +4,7 @@ import { Beaker, ChevronRight, DollarSign, Leaf, Loader2, Menu, PanelRightOpen, 
 import { Navigator, type AgentLogItem, type ProjectListItem } from "@/components/lab/Navigator";
 import { ContextStore } from "@/components/lab/ContextStore";
 import { ProtocolCard } from "@/components/lab/ProtocolCard";
+import { MoleculeCard } from "@/components/lab/MoleculeCard";
 import { SupplyChainCard } from "@/components/lab/SupplyChainCard";
 import { TimelineCard } from "@/components/lab/TimelineCard";
 import { ComparisonCard } from "@/components/lab/ComparisonCard";
@@ -633,7 +634,10 @@ const Index = () => {
 
                 {/* ── Tab panels ── */}
                 {activeTab === "protocol" && (
-                  <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
+                  <div className="space-y-4">
+                    <MoleculeCard plan={activePlan} />
+                    <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
+                  </div>
                 )}
                 {activeTab === "budget" && (
                   <div className="space-y-4">

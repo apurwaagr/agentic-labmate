@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Atom, ChevronDown, ExternalLink, FlaskConical, Orbit, Plus, RotateCw, Info, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Atom, BookOpen, ChevronDown, ExternalLink, FlaskConical, Orbit, Plus, RotateCw, Info, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
 import { moleculeForPlan, type ExperimentPlan, type MoleculeModel } from "@/lib/labApi";
 
 const elementColor: Record<string, string> = {
@@ -193,45 +193,9 @@ function protocolContextForPlan(plan: ExperimentPlan) {
   };
 }
 
-/** Molecule role derived from its known name */
-function roleLabel(name: string): { label: string; color: string } {
-  const n = name.toLowerCase();
-  if (n.includes("3-mercapto") || n.includes("sam linker") || n.includes("linker"))
-    return { label: "Electrode SAM linker", color: "text-amber-700 bg-amber-50 border-amber-200" };
-  if (n.includes("ferrocene") || n.includes("redox reporter"))
-    return { label: "Redox reporter", color: "text-orange-700 bg-orange-50 border-orange-200" };
-  if (n.includes("dmso") || n.includes("control"))
-    return { label: "Control compound", color: "text-slate-600 bg-slate-50 border-slate-200" };
-  if (n.includes("trehalose") || n.includes("cryoprotectant"))
-    return { label: "Cryoprotectant", color: "text-sky-700 bg-sky-50 border-sky-200" };
-  if (n.includes("acetate") || n.includes("co2"))
-    return { label: "Metabolite", color: "text-emerald-700 bg-emerald-50 border-emerald-200" };
-  return { label: "Key compound", color: "text-primary bg-primary-soft border-primary/20" };
-}
-
-/** PubChem CID for known molecules when server doesn't embed it in materials */
-const KNOWN_PUBCHEM: Record<string, { cid: number; name: string }> = {
-  "3-mercaptopropionic acid": { cid: 75763, name: "3-Mercaptopropionic acid" },
-  "sam linker":               { cid: 75763, name: "3-Mercaptopropionic acid" },
-  ferrocene:                  { cid: 7692,  name: "Ferrocene" },
-  trehalose:                  { cid: 7427,  name: "Trehalose" },
-  dmso:                       { cid: 679,   name: "Dimethyl sulfoxide" },
-  acetate:                    { cid: 175,   name: "Acetic acid / Acetate" },
-};
-
-function pubchemForModel(model: MoleculeModel): { cid: number; name: string } | null {
-  const n = model.name.toLowerCase();
-  for (const [key, val] of Object.entries(KNOWN_PUBCHEM)) {
-    if (n.includes(key)) return val;
-  }
-  return null;
-}
-
 export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
-  const knownCid = useMemo(() => pubchemForModel(moleculeForPlan(plan)), [plan]);
   const presets = useMemo(() => comparatorModelsForPlan(plan, moleculeForPlan(plan)), [plan]);
   const protocolContext = useMemo(() => protocolContextForPlan(plan), [plan]);
-  const primaryCompound = useMemo(() => plan.materials.find((item) => item.pubchemCid), [plan]);
   const [presetIndex, setPresetIndex] = useState(0);
   const [mode, setMode] = useState<"2d" | "3d">("3d");
   const [rotation, setRotation] = useState(18);
@@ -329,82 +293,119 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
         </div>
       </header>
 
-      {/* ── COMPOUND REFERENCE PANEL — primary visual for project creators ── */}
-      {presetIndex === 0 && (primaryCompound?.pubchemCid || knownCid) ? (() => {
-        const displayCid = primaryCompound?.pubchemCid ?? knownCid!.cid;
-        const displayName = primaryCompound?.name ?? knownCid!.name;
-        const isKnownFallback = !primaryCompound?.pubchemCid && !!knownCid;
-        return (
-          <div className="mb-4 rounded-xl border-2 border-primary/20 bg-primary-soft/30 p-4">
-            <div className="mb-2 flex items-center justify-between gap-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-                <FlaskConical className="size-3" />
-                Key project compound — PubChem verified
-              </div>
-              {isKnownFallback && (
-                <span className="rounded-full border border-amber-400/30 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                  Local CID lookup
-                </span>
-              )}
+      {/* ── Target compound — highlighted panel with lit ref ── */}
+      {plan.targetCompound && (
+        <div className="mb-4 rounded-xl border-2 border-accent/30 bg-accent-soft/30 p-3.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-foreground">
+              <Sparkles className="size-3" />
+              Target / Final Compound
             </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="shrink-0">
-                <img
-                  src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${displayCid}/PNG?image_size=large`}
-                  alt={`${displayName} 2D structure`}
-                  className="h-36 w-36 rounded-xl border border-border bg-white object-contain shadow-sm"
-                />
-              </div>
-              <div className="flex-1 space-y-1.5 text-xs text-foreground">
-                <div className="text-sm font-semibold">{displayName}</div>
-                {primaryCompound?.molecularFormula && (
-                  <div className="font-mono text-xs text-muted-foreground">{primaryCompound.molecularFormula}</div>
-                )}
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 pt-1 text-[11px] text-muted-foreground">
-                  {typeof primaryCompound?.molecularWeight === "number" && (
-                    <>
-                      <span className="font-medium text-foreground/75">MW</span>
-                      <span>{primaryCompound.molecularWeight.toFixed(2)} g/mol</span>
-                    </>
-                  )}
-                  {primaryCompound?.iupacName && (
-                    <>
-                      <span className="font-medium text-foreground/75">IUPAC</span>
-                      <span className="truncate">{primaryCompound.iupacName}</span>
-                    </>
-                  )}
-                  <span className="font-medium text-foreground/75">CID</span>
-                  <span>{displayCid}</span>
-                </div>
+            {plan.targetCompound.pubchemCid && (
+              <a
+                href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-panel px-2 py-0.5 text-[10px] text-accent-foreground hover:bg-accent-soft transition-colors"
+              >
+                <ExternalLink className="size-2.5" />
+                PubChem CID {plan.targetCompound.pubchemCid}
+              </a>
+            )}
+          </div>
+          <div className="flex gap-3 items-start">
+            {plan.targetCompound.pubchemCid && (
+              <img
+                src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${plan.targetCompound.pubchemCid}/PNG?image_size=large`}
+                alt={`${plan.targetCompound.name} 2D structure`}
+                className="h-28 w-28 shrink-0 rounded-xl border border-border bg-white object-contain shadow-sm"
+              />
+            )}
+            <div className="space-y-1 text-xs min-w-0 flex-1">
+              <div className="font-semibold text-sm">{plan.targetCompound.name}</div>
+              {plan.targetCompound.molecularFormula && (
+                <div className="font-mono text-[11px] text-muted-foreground">{plan.targetCompound.molecularFormula}{plan.targetCompound.molecularWeight ? ` · ${plan.targetCompound.molecularWeight.toFixed(1)} g/mol` : ""}</div>
+              )}
+              {plan.targetCompound.iupacName && (
+                <div className="text-[11px] text-muted-foreground truncate" title={plan.targetCompound.iupacName}>{plan.targetCompound.iupacName}</div>
+              )}
+              {plan.targetCompound.literatureRef && (
                 <a
-                  href={primaryCompound?.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${displayCid}`}
+                  href={plan.targetCompound.literatureRef.uri}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                  className="mt-1 inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2 py-0.5 text-[10px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
                 >
-                  <ExternalLink className="size-3" />
-                  Open PubChem record
+                  <BookOpen className="size-2.5" />
+                  <span className="max-w-[200px] truncate">{plan.targetCompound.literatureRef.title}</span>
+                  <ExternalLink className="size-2.5 opacity-60" />
                 </a>
-              </div>
+              )}
             </div>
-          </div>
-        );
-      })() : (
-        <div className="mb-4 rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center">
-          <FlaskConical className="mx-auto mb-2 size-7 text-muted-foreground/50" />
-          <div className="text-xs font-medium text-foreground/70">
-            {plan.materials[0]?.name || "Project compound"}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            No PubChem structure available for this compound. Use the sketch canvas below to visualise the hypothesis.
           </div>
         </div>
       )}
 
+      {/* ── All project compounds from materials with PubChem CIDs ── */}
+      {(() => {
+        const pubchemMaterials = plan.materials.filter((m) => m.pubchemCid);
+        if (pubchemMaterials.length === 0) return null;
+        return (
+          <div className="mb-4">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <FlaskConical className="size-3 text-primary" />
+              All Project Compounds ({pubchemMaterials.length})
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+              {pubchemMaterials.map((mat) => (
+                <div
+                  key={mat.pubchemCid}
+                  className={`shrink-0 rounded-xl border bg-panel p-2.5 w-[148px] cursor-pointer transition-colors ${
+                    presetIndex === plan.materials.indexOf(mat)
+                      ? "border-primary/40 bg-primary-soft/30 shadow-sm"
+                      : "border-border hover:border-primary/30 hover:bg-muted/30"
+                  }`}
+                  onClick={() => {
+                    const idx = presets.findIndex((p) => p.name.toLowerCase().includes((mat.name || "").toLowerCase().split(" ")[0]));
+                    if (idx >= 0) setPresetIndex(idx);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === "Enter" && setPresetIndex(0)}
+                >
+                  <img
+                    src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${mat.pubchemCid}/PNG?image_size=large`}
+                    alt={`${mat.name} structure`}
+                    className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain"
+                  />
+                  <div className="text-[11px] font-semibold leading-tight line-clamp-2">{mat.name}</div>
+                  {mat.molecularFormula && (
+                    <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>
+                  )}
+                  <div className="mt-1 flex items-center justify-between gap-1">
+                    {mat.molecularWeight && (
+                      <span className="text-[10px] text-muted-foreground">{mat.molecularWeight.toFixed(0)} g/mol</span>
+                    )}
+                    <a
+                      href={mat.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline"
+                    >
+                      CID {mat.pubchemCid} <ExternalLink className="size-2.5" />
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Preset selector with role labels —— */}
       <div className="mb-3 flex flex-wrap gap-1.5">
         {presets.map((preset, index) => {
-          const roleInfo = roleLabel(preset.name);
           return (
             <button
               key={`${preset.name}-${index}`}
@@ -417,7 +418,6 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
               }`}
             >
               <span className={`size-2 rounded-full ${presetIndex === index ? "bg-primary" : "bg-border"}`} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide opacity-60">{index === 0 ? "INT" : "CMP"}</span>
               {preset.name.split("(")[0].trim()}
             </button>
           );

@@ -121,6 +121,16 @@ export type ExperimentPlan = {
   validation: ValidationPlan;
   reviewAdaptations: ReviewAdaptation[];
   sources: SourceReference[];
+  /** The final / target compound for this project with an optional literature reference */
+  targetCompound?: {
+    name: string;
+    pubchemCid?: number;
+    molecularFormula?: string;
+    molecularWeight?: number;
+    iupacName?: string;
+    note: string;
+    literatureRef?: { title: string; uri: string };
+  };
 };
 
 export type ReviewRecord = {

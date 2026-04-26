@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, Clock3, FlaskConical, ShieldCheck, TestTube2, XCircle } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, Clock3, ExternalLink, FlaskConical, ShieldCheck, TestTube2, XCircle } from "lucide-react";
 import type { MaterialItem, ProtocolStep } from "@/lib/labApi";
 
 const riskColor = {
@@ -137,10 +137,24 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                         <Clock3 className="size-2.5" />
                         {step.duration}
                       </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-panel border border-border px-2 py-0.5">
-                        <BookOpen className="size-2.5" />
-                        {step.source}
-                      </span>
+                      {step.sourceTitle ? (
+                        <a
+                          href={step.sourceUri || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-full bg-panel border border-primary/20 px-2 py-0.5 text-primary hover:bg-primary-soft transition-colors"
+                          title={step.sourceTitle}
+                        >
+                          <BookOpen className="size-2.5" />
+                          <span className="max-w-[160px] truncate">{step.sourceTitle}</span>
+                          <ExternalLink className="size-2.5 opacity-60" />
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-panel border border-border px-2 py-0.5">
+                          <BookOpen className="size-2.5" />
+                          {step.source}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <ChevronDown className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
@@ -151,7 +165,7 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                     {/* Procedure — compact prose */}
                     <p className="text-xs leading-relaxed text-foreground/80">{step.detail}</p>
 
-                    {/* Validation checks as tightly-spaced bullets */}
+                    {/* Validation checks */}
                     {step.validationChecks.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {step.validationChecks.map((check) => (
@@ -160,6 +174,24 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                             {check}
                           </span>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Literature citation for this step */}
+                    {(step.sourceTitle || step.sourceUri) && (
+                      <div className="flex items-start gap-1.5 rounded-lg border border-primary/15 bg-primary-soft/30 px-2.5 py-2 text-[11px]">
+                        <BookOpen className="size-3 shrink-0 mt-0.5 text-primary" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-primary/70 mr-1.5">Reference</span>
+                          {step.sourceUri ? (
+                            <a href={step.sourceUri} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
+                              <span className="line-clamp-1">{step.sourceTitle || step.source}</span>
+                              <ExternalLink className="size-2.5 shrink-0 opacity-60" />
+                            </a>
+                          ) : (
+                            <span className="text-foreground/70">{step.sourceTitle || step.source}</span>
+                          )}
+                        </div>
                       </div>
                     )}
 

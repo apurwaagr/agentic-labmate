@@ -887,93 +887,145 @@ async function buildMaterialsFromEvidence(parsed, hypothesis, evidencePack) {
   });
 }
 
-function buildDynamicSteps(parsed, evidencePack) {
-  const firstRef = evidencePack.items[0];
-  const secondRef = evidencePack.items[1];
-  const assay = parsed.outcome || "primary readout";
-  const protocolRef = evidencePack.items.find((item) => item.source === "protocols.io");
-  const protocolContext = protocolRef
-    ? [protocolRef.protocolDescription, protocolRef.protocolBeforeStart, protocolRef.protocolMaterials]
-        .filter(Boolean)
-        .join(" ")
-        .slice(0, 260)
-    : "";
-
-  return [
-    {
-      id: "step-1",
-      title: "Confirm the experimental arms against retrieved precedent",
-      detail: `Translate the hypothesis into an intervention arm (${parsed.intervention}) and a control arm (${parsed.control}) in the target system (${parsed.subject}). ${
-        protocolContext
-          ? `Use the retrieved protocol context "${protocolContext}" to sanity-check whether the assay context matches the proposed experiment.`
-          : "Use the closest retrieved paper to sanity-check whether the assay context matches the proposed experiment."
-      }`,
-      quantity: "1 design review",
-      duration: "4 hours",
-      source: firstRef?.source || "literature API",
-      sourceUri: firstRef?.url || evidenceUrl(firstRef),
-      sourceTitle: firstRef?.title,
-      riskLevel: "med",
-      riskNote: "If the retrieved precedent differs materially from the proposed biological system or assay, the downstream workflow may not transfer cleanly.",
-      validationChecks: [
-        "Confirm the intervention, control, and assay endpoint all appear in the retrieved reference set.",
-      ],
-      decisionGate: "Do not order materials until the scientist confirms the retrieved precedent is close enough to justify the planned assay.",
-    },
-    {
-      id: "step-2",
-      title: "Assemble materials and setup around the retrieved workflow",
-      detail: `Procure the primary intervention material, the biological system, and the assay reagents needed to measure ${assay}. ${
-        protocolRef?.protocolMaterials
-          ? `Prioritize materials explicitly surfaced by the retrieved protocol: ${protocolRef.protocolMaterials.slice(0, 220)}.`
-          : "Match setup choices to the retrieved protocol family instead of assuming local defaults."
-      }`,
-      quantity: "Critical-path materials",
-      duration: "1 day",
-      source: secondRef?.source || firstRef?.source || "literature API",
-      sourceUri: secondRef?.url || evidenceUrl(secondRef) || protocolRef?.url,
-      sourceTitle: secondRef?.title || firstRef?.title,
-      riskLevel: "med",
-      riskNote: "Materials inferred from literature metadata can still mismatch the exact reagent format or instrument model available in the lab.",
-      validationChecks: [
-        "Verify every critical material has an identified supplier and acceptable lead time.",
-      ],
-      decisionGate: "Pause execution if a critical reagent or system component cannot be matched to the intended workflow.",
-    },
-    {
-      id: "step-3",
-      title: "Run the primary assay and record threshold-linked outcomes",
-      detail: `Execute the intervention and control arms in matched conditions, then capture the primary outcome (${assay}) with the threshold specified in the hypothesis.`,
-      quantity: "Pilot batch",
-      duration: "2 days",
-      source: firstRef?.source || "literature API",
-      sourceUri: firstRef?.url || evidenceUrl(firstRef),
-      sourceTitle: firstRef?.title,
-      riskLevel: "high",
-      riskNote: "The biggest scientific risk is measuring the right endpoint with the wrong timing, normalization, or control condition.",
-      validationChecks: [
-        "Confirm the measured endpoint can distinguish intervention from control before scaling.",
-      ],
-      decisionGate: "Advance only if the pilot data show an interpretable signal in the same direction as the hypothesis.",
-    },
-    {
-      id: "step-4",
-      title: "Benchmark against retrieved literature and review corrections",
-      detail: "Compare the observed execution assumptions, timeline, and assay behavior against the retrieved references and any stored scientist review notes before deciding the next iteration.",
-      quantity: "1 review pass",
-      duration: "4 hours",
-      source: secondRef?.source || firstRef?.source || "literature API",
-      sourceUri: secondRef?.url || evidenceUrl(secondRef) || firstRef?.url || evidenceUrl(firstRef),
-      sourceTitle: secondRef?.title || firstRef?.title,
-      riskLevel: "med",
-      riskNote: "A plan can look scientifically plausible yet still fail operationally if timing, variance, or procurement issues diverge from precedent.",
-      validationChecks: [
-        "Document any divergence from retrieved literature and mark whether it is a scientific choice or an operational constraint.",
-      ],
-      decisionGate: "Do not claim success until the observed data and execution constraints are both consistent with the retrieved evidence.",
-    },
-  ];
+/** Return a chemically meaningful quantity string for a protocol step */
+function stepQuantity(label = "", units = "") {
+  const lower = label.toLowerCase();
+  if (/(trehalose|sucrose|glucose|sugar|disaccharide)/.test(lower))
+    return "50 mg (0.146 mmol) dissolved in PBS";
+  if (/(dmso|dimethyl)/.test(lower))
+    return "10 µL (100% v/v stock), diluted to 10% in medium";
+  if (/(antibody|anti-|igG)/.test(lower))
+    return "10 µg in 100 µL PBS, 1 µg/mL working concentration";
+  if (/(3-mercapto|thiol|mpa|linker)/.test(lower))
+    return "1 mM in ethanol (5 mg dissolved in 50 mL EtOH)";
+  if (/(ferrocene|redox)/.test(lower))
+    return "5 mM in PBS (1.86 mg in 2 mL)";
+  if (/fitc-dextran/.test(lower))
+    return "1 mg/mL in HBSS (10 mg dissolved in 10 mL)";
+  if (/(co2|carbon dioxide)/.test(lower))
+    return "30 mL/min sparged at 1 atm";
+  if (/(acetate|acetic acid)/.test(lower))
+    return "50 mM standard in ultrapure water";
+  if (/(edc|nhs|coupling)/.test(lower))
+    return "EDC 0.4 mg/mL + Sulfo-NHS 0.1 mg/mL in MES buffer pH 6.0";
+  if (/(electrode|spe|screen|carbon)/.test(lower))
+    return "1 unit; clean with 0.5 M H2SO4 cyclic voltammetry 10 cycles";
+  if (/(buffer|pbs|hbss|tris)/.test(lower))
+    return "1× PBS pH 7.4, 500 µL";
+  if (/(cell|culture|hela|lrgg)/.test(lower))
+    return "1 × 10⁶ cells in 500 µL medium";
+  if (/(kit|assay|elisa)/.test(lower))
+    return "1 kit; follow manufacturer's protocol for sample prep";
+  if (/(sporomusa|bacteria|microbe)/.test(lower))
+    return "10 mL mid-log phase culture (OD600 ≈ 0.4)";
+  return units || "See protocol step detail for specific amounts";
 }
+
+/** Map evidence-pack items to steps based on index, cycling through refs */
+function refForStep(evidencePack, stepIndex) {
+  const items = evidencePack.items;
+  if (!items || items.length === 0) return null;
+  return items[stepIndex % items.length] || items[0];
+}
+
+function buildDynamicSteps(parsed, evidencePack, materials = []) {
+  const assay = parsed.outcome || "primary readout";
+  const intervention = parsed.intervention || "the primary reagent";
+  const control = parsed.control || "matched control";
+  const subject = parsed.subject || "experimental system";
+  const mechanism = parsed.mechanism || "";
+
+  const protocolRef = evidencePack.items.find((item) => item.source === "protocols.io");
+
+  /* ── Step 0: Literature & hypothesis alignment ── */
+  const ref0 = refForStep(evidencePack, 0);
+  const steps = [];
+  steps.push({
+    id: "step-1",
+    title: "Align hypothesis against retrieved precedent",
+    detail: `Confirm that the intervention arm (${intervention}) and control arm (${control}) are compatible with the target system (${subject}). Check the retrieved reference for assay format: ${ref0?.title || "see literature sources"}.${mechanism ? ` Expected mechanism: ${mechanism}.` : ""}`,
+    quantity: "1 design review session (≈ 4 h)",
+    duration: "4 h",
+    source: ref0?.source || "Literature",
+    sourceUri: ref0?.url || (ref0?.doi ? `https://doi.org/${ref0.doi}` : ""),
+    sourceTitle: ref0?.title || "Retrieved precedent",
+    riskLevel: "med",
+    riskNote: "A mismatch between the proposed assay and the retrieved protocol family can invalidate all downstream steps.",
+    validationChecks: ["Confirmed intervention/control/endpoint all appear in retrieved references."],
+    decisionGate: "Do not procure materials until scientist confirms the retrieved precedent justifies the planned assay format.",
+  });
+
+  /* ── Steps per material ── */
+  materials.slice(0, 5).forEach((mat, idx) => {
+    const ref = refForStep(evidencePack, idx + 1);
+    const qty = stepQuantity(mat.name);
+    const isPrimary = idx === 0;
+    steps.push({
+      id: `step-${steps.length + 1}`,
+      title: isPrimary ? `Prepare primary reagent — ${mat.name}` : `Prepare ${mat.name}`,
+      detail: `${isPrimary ? "Intervention reagent" : "Supporting reagent"}: ${mat.name}${mat.molecularFormula ? ` (${mat.molecularFormula}` : ""}${mat.molecularWeight ? `, MW ${mat.molecularWeight.toFixed(1)} g/mol)` : (mat.molecularFormula ? ")" : "")}. Quantity: ${qty}. ${mat.iupacName ? `IUPAC: ${mat.iupacName}. ` : ""}${protocolRef?.protocolMaterials ? `Protocol notes: ${protocolRef.protocolMaterials.slice(0, 180)}.` : "Prepare in accordance with supplier specification and retrieved protocol standard."}`,
+      quantity: qty,
+      duration: idx === 0 ? "2 h" : "1 h",
+      source: ref?.source || mat.supplier || "PubChem",
+      sourceUri: mat.sourceUri || (ref?.url) || (ref?.doi ? `https://doi.org/${ref.doi}` : "") || (mat.pubchemCid ? `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}` : ""),
+      sourceTitle: ref?.title || mat.name,
+      riskLevel: isPrimary ? "med" : "low",
+      riskNote: isPrimary
+        ? `Purity and stoichiometry of ${mat.name} directly set the signal-to-noise of ${assay}.`
+        : `Ensure ${mat.name} is compatible with buffer conditions used for the primary assay.`,
+      validationChecks: [
+        `Verify ${mat.name} stock concentration by UV-Vis or NMR before use.`,
+        ...(mat.pubchemCid ? [`Cross-check identity against PubChem CID ${mat.pubchemCid}.`] : []),
+      ],
+      decisionGate: isPrimary
+        ? `Halt if ${mat.name} purity < 95% or if the measured MW deviates >2% from expected.`
+        : undefined,
+    });
+  });
+
+  /* ── Assay execution step ── */
+  const refAssay = refForStep(evidencePack, steps.length);
+  steps.push({
+    id: `step-${steps.length + 1}`,
+    title: `Execute primary assay — measure ${assay}`,
+    detail: `Apply the prepared ${intervention} to the ${subject} under matched conditions. Run ${control} in parallel. Record ${assay} at all specified time points. ${protocolRef ? `Follow the retrieved protocol procedure: "${(protocolRef.protocolDescription || "").slice(0, 200)}".` : ""}`,
+    quantity: `Pilot n ≥ 3 replicates per arm`,
+    duration: "1–2 days",
+    source: refAssay?.source || "Literature",
+    sourceUri: refAssay?.url || (refAssay?.doi ? `https://doi.org/${refAssay.doi}` : ""),
+    sourceTitle: refAssay?.title || "Primary assay reference",
+    riskLevel: "high",
+    riskNote: `Incorrect timing, normalization, or control condition for ${assay} is the dominant scientific risk.`,
+    validationChecks: [
+      "Signal separated between intervention and control before proceeding.",
+      "All replicates within 20% CV.",
+    ],
+    decisionGate: `Advance only if pilot data show interpretable signal in the expected direction for ${assay}.`,
+  });
+
+  /* ── Analysis & benchmark step ── */
+  const refBench = refForStep(evidencePack, steps.length);
+  steps.push({
+    id: `step-${steps.length + 1}`,
+    title: "Analyse results and benchmark against literature",
+    detail: `Compare observed outcomes for ${assay} against the threshold in the hypothesis (${parsed.threshold || "see hypothesis"}). Overlay with retrieved literature benchmarks. Document divergences and mark whether they are scientific choices or operational constraints.`,
+    quantity: "1 analysis pass (≈ 4 h)",
+    duration: "4 h",
+    source: refBench?.source || "Literature",
+    sourceUri: refBench?.url || (refBench?.doi ? `https://doi.org/${refBench.doi}` : ""),
+    sourceTitle: refBench?.title || "Benchmark reference",
+    riskLevel: "low",
+    riskNote: "A plan can look scientifically plausible yet still fail operationally if timing, variance, or procurement diverges from precedent.",
+    validationChecks: [
+      "All divergences from retrieved literature documented and classified.",
+      "Decision gate for next iteration recorded.",
+    ],
+    decisionGate: "Do not claim success until observed data and execution constraints are both consistent with the retrieved evidence.",
+  });
+
+  return steps;
+}
+
 
 function buildDynamicTimeline(steps) {
   return steps.map((step, index) => ({
@@ -998,7 +1050,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
   const parsed = await parseHypothesis(hypothesis);
   const evidencePack = await retrieveEvidencePack(hypothesis);
   const materials = await buildMaterialsFromEvidence(parsed, hypothesis, evidencePack);
-  const steps = buildDynamicSteps(parsed, evidencePack);
+  const steps = buildDynamicSteps(parsed, evidencePack, materials);
   const timeline = buildDynamicTimeline(steps);
   const budget = buildBudget(
     materials,
@@ -1016,6 +1068,25 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
     domain.name,
   );
   const totalDays = timeline.reduce((sum, phase) => sum + phase.durationDays, 0);
+
+  // Derive target/final compound from parsed outcome or materials
+  const targetLabel = parsed.outcome || parsed.intervention || materials[0]?.name || "";
+  let targetCompound = null;
+  if (targetLabel) {
+    const tc = await fetchPubChemCompoundByName(targetLabel).catch(() => null);
+    const topRef = evidencePack.items[0];
+    targetCompound = {
+      name: tc?.title || targetLabel,
+      pubchemCid: tc?.cid || undefined,
+      molecularFormula: tc?.molecularFormula || undefined,
+      molecularWeight: tc?.molecularWeight || undefined,
+      iupacName: tc?.iupacName || undefined,
+      note: `Target / final compound for this project derived from the parsed outcome: "${targetLabel}".`,
+      literatureRef: topRef
+        ? { title: topRef.title, uri: topRef.url || (topRef.doi ? `https://doi.org/${topRef.doi}` : "") }
+        : undefined,
+    };
+  }
 
   return {
     experiment: {
@@ -1055,6 +1126,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
         source: item.source,
         uri: evidenceUrl(item),
       })),
+      ...(targetCompound ? { targetCompound } : {}),
     },
   };
 }
