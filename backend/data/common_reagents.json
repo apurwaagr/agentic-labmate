@@ -1,0 +1,130 @@
+{
+  "reagents": [
+    {
+      "name": "trehalose",
+      "catalogNumber": "T9531",
+      "supplier": "Sigma-Aldrich",
+      "unitCostUsd": 45,
+      "unit": "100g",
+      "notes": "Dihydrate, for molecular biology grade"
+    },
+    {
+      "name": "DMSO",
+      "catalogNumber": "D2650",
+      "supplier": "Sigma-Aldrich",
+      "unitCostUsd": 35,
+      "unit": "100mL",
+      "notes": "Cell culture grade, sterile filtered"
+    },
+    {
+      "name": "Lactobacillus rhamnosus GG",
+      "catalogNumber": "53103",
+      "supplier": "ATCC",
+      "unitCostUsd": 180,
+      "unit": "culture",
+      "notes": "ATCC 53103, lyophilized"
+    },
+    {
+      "name": "FITC-dextran 4kDa",
+      "catalogNumber": "46944",
+      "supplier": "Sigma-Aldrich",
+      "unitCostUsd": 120,
+      "unit": "250mg",
+      "notes": "Average MW 4000, for permeability assays"
+    },
+    {
+      "name": "anti-CRP antibodies",
+      "catalogNumber": "MAB8647",
+      "supplier": "R&D Systems",
+      "unitCostUsd": 280,
+      "unit": "100ug",
+      "notes": "Mouse monoclonal, for ELISA"
+    },
+    {
+      "name": "C-reactive protein",
+      "catalogNumber": "868886",
+      "supplier": "Sigma-Aldrich",
+      "unitCostUsd": 150,
+      "unit": "1mg",
+      "notes": "Human recombinant, for assay standards"
+    },
+    {
+      "name": "HeLa cells",
+      "catalogNumber": "CCL-2",
+      "supplier": "ATCC",
+      "unitCostUsd": 350,
+      "unit": "vial",
+      "notes": "ATCC CCL-2, epithelial cells"
+    },
+    {
+      "name": "C57BL/6 mice",
+      "catalogNumber": "000664",
+      "supplier": "Jackson Laboratory",
+      "unitCostUsd": 25,
+      "unit": "mouse",
+      "notes": "JAX 000664, 6-8 weeks old"
+    },
+    {
+      "name": "Sporomusa ovata",
+      "catalogNumber": "DSM 2662",
+      "supplier": "DSMZ",
+      "unitCostUsd": 200,
+      "unit": "culture",
+      "notes": "Type strain, for electrochemical systems"
+    }
+  ],
+  "protocols": [
+    {
+      "name": "cell cryopreservation",
+      "source": "protocols.io",
+      "uri": "https://www.protocols.io/view/cell-cryopreservation-protocol-9jbggqw",
+      "steps": [
+        "Harvest cells at 70-80% confluency",
+        "Centrifuge at 300g for 5 minutes",
+        "Resuspend in freezing medium (90% FBS + 10% DMSO)",
+        "Aliquot into cryovials",
+        "Cool at -1°C/min to -80°C using controlled rate freezer",
+        "Transfer to liquid nitrogen for long-term storage"
+      ]
+    },
+    {
+      "name": "FITC-dextran permeability assay",
+      "source": "bio-protocol",
+      "uri": "https://bio-protocol.org/e4158",
+      "steps": [
+        "Fast mice for 4 hours prior to assay",
+        "Administer FITC-dextran (600 mg/kg) by oral gavage",
+        "Collect blood samples at 0.5, 1, 2, and 4 hours",
+        "Measure fluorescence in serum using plate reader",
+        "Calculate permeability from AUC"
+      ]
+    },
+    {
+      "name": "ELISA for CRP detection",
+      "source": "Nature Protocols",
+      "uri": "https://www.nature.com/nprot/journal/v5/n1/full/nprot.2009.229.html",
+      "steps": [
+        "Coat plates with capture antibody overnight at 4°C",
+        "Block with 1% BSA for 1 hour at room temperature",
+        "Add samples and standards, incubate 2 hours",
+        "Add detection antibody, incubate 1 hour",
+        "Add HRP conjugate, incubate 30 minutes",
+        "Add TMB substrate, stop with sulfuric acid",
+        "Read absorbance at 450nm"
+      ]
+    },
+    {
+      "name": "bioelectrochemical CO2 fixation",
+      "source": "protocols.io",
+      "uri": "https://www.protocols.io/view/microbial-electrosynthesis-protocol-3yjhvqw",
+      "steps": [
+        "Prepare H-cell electrochemical reactor",
+        "Inoculate with Sporomusa ovata culture",
+        "Set cathode potential to -400mV vs SHE",
+        "Purge with CO2/H2 (80:20) gas mixture",
+        "Monitor acetate production via HPLC",
+        "Maintain pH 7.0 with automated titration"
+      ]
+    }
+  ]
+}
