@@ -47,6 +47,20 @@ function styleConfig(style: ViewerStyle): Record<string, unknown> {
   };
 }
 
+function normalizedCompoundName(label?: string): string {
+  if (!label) return "";
+  const cleaned = label
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[,;].*$/, "")
+    .replace(/\b(cell culture|analytical|anhydrous|reagent|grade|technical|ultrapure|hplc|sterile|pure)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned === "dmso") return "dimethyl sulfoxide";
+  return cleaned;
+}
+
 export function Molecule3DViewer({
   cid,
   className,
@@ -83,19 +97,42 @@ export function Molecule3DViewer({
       try {
         await ensure3DmolLoaded();
 
-        const urls = [
-          `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF?record_type=3d`,
-          `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF`,
+        // Route through local API proxy first (cached, avoids browser rate-limits on PubChem).
+        // Falls back through NCI Cactus, then direct PubChem.
+        const normalizedLabel = normalizedCompoundName(label);
+        const labelCandidates = [label?.trim() || "", normalizedLabel].filter(Boolean);
+        const encodedLabelCandidates = Array.from(new Set(labelCandidates.map((n) => encodeURIComponent(n))));
+        const urlList: { url: string; is3d: boolean }[] = [
+          ...encodedLabelCandidates.map((encodedName) => ({
+            url: `/api/compound/sdf?cid=${cid}&type=3d&name=${encodedName}`,
+            is3d: true,
+          })),
+          ...encodedLabelCandidates.map((encodedName) => ({
+            url: `/api/compound/sdf?cid=${cid}&name=${encodedName}`,
+            is3d: false,
+          })),
+          ...encodedLabelCandidates.map((encodedName) => ({
+            url: `https://cactus.nci.nih.gov/chemical/structure/${encodedName}/sdf`,
+            is3d: true,
+          })),
+          { url: `/api/compound/sdf?cid=${cid}&type=3d`, is3d: true },
+          { url: `/api/compound/sdf?cid=${cid}`, is3d: false },
+          { url: `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF?record_type=3d`, is3d: true },
+          { url: `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF`, is3d: false },
         ];
 
         let sdf = "";
         let got3D = false;
-        for (const [i, url] of urls.entries()) {
+        for (const entry of urlList) {
           try {
-            const res = await fetch(url);
+            const res = await fetch(entry.url);
             if (!res.ok) continue;
-            sdf = await res.text();
-            got3D = i === 0;
+            const text = await res.text();
+            // Reject HTML error pages or JSON error objects; valid SDF must contain newlines
+            if (!text || text.trim().startsWith("<") || text.trim().startsWith("{")) continue;
+            if (!text.includes("\n")) continue;
+            sdf = text;
+            got3D = entry.is3d;
             break;
           } catch {
             continue;

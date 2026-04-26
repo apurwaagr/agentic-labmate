@@ -19,6 +19,71 @@ const reviewStorePath = join(process.cwd(), "server", ".data", "reviews.json");
 
 const reviewStore = loadReviewStore();
 
+// ─── In-memory SDF cache (avoids repeated PubChem hits for the same CID) ─────────
+/** @type {Map<string, { sdf: string; ts: number }>} */
+const sdfCache = new Map();
+const SDF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+function normalizeCompoundName(name = "") {
+  const cleaned = String(name)
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[,;].*$/, "")
+    .replace(/\b(cell culture|analytical|anhydrous|reagent|grade|technical|ultrapure|hplc|sterile|pure)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned === "dmso") return "dimethyl sulfoxide";
+  return cleaned;
+}
+
+async function fetchSdfByCid(cid, type = "3d", name = "") {
+  const key = `${cid}:${type}`;
+  const cached = sdfCache.get(key);
+  if (cached && Date.now() - cached.ts < SDF_CACHE_TTL_MS) return cached.sdf;
+
+  // 1. Try PubChem
+  const pubchemUrl = type === "3d"
+    ? `${pubchemApiUrl}/compound/cid/${cid}/SDF?record_type=3d`
+    : `${pubchemApiUrl}/compound/cid/${cid}/SDF`;
+
+  try {
+    const res = await fetch(pubchemUrl);
+    if (res.ok) {
+      const sdf = await res.text();
+      if (sdf && !sdf.trim().startsWith("{") && sdf.includes("\n")) {
+        sdfCache.set(key, { sdf, ts: Date.now() });
+        return sdf;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // 2. Try NCI Cactus by compound name as fallback.
+  // Use both raw and normalized names to handle labels like "DMSO, cell culture grade".
+  const nameCandidates = Array.from(new Set([
+    String(name || "").trim(),
+    normalizeCompoundName(name),
+  ].filter(Boolean)));
+
+  for (const candidate of (nameCandidates.length ? nameCandidates : [String(cid)])) {
+    const cactusQuery = encodeURIComponent(candidate);
+    try {
+      const cactusUrl = `https://cactus.nci.nih.gov/chemical/structure/${cactusQuery}/sdf`;
+      const res = await fetch(cactusUrl, { headers: { Accept: "text/plain" } });
+      if (!res.ok) continue;
+      const sdf = await res.text();
+      if (sdf && !sdf.trim().startsWith("<") && !sdf.trim().startsWith("{") && sdf.includes("\n")) {
+        sdfCache.set(key, { sdf, ts: Date.now() });
+        return sdf;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 const apiContracts = [
   {
     name: "Health",
@@ -3040,7 +3105,29 @@ Output style:
 
   const references = fallback.experiment.sources;
   const data = generated.data;
-  const materials = data.materials?.length ? data.materials : fallback.experiment.materials;
+
+  // Enrich Gemini-generated materials with PubChem CIDs server-side.
+  // Gemini's schema does not include pubchemCid/molecularFormula, so we resolve
+  // them here — same approach as buildMaterialsFromEvidence in the fallback path.
+  let enrichedGeminiMaterials = null;
+  if (data.materials?.length) {
+    const compounds = await Promise.all(
+      data.materials.map((m) => fetchPubChemCompoundByName(m.name).catch(() => null)),
+    );
+    enrichedGeminiMaterials = data.materials.map((mat, i) => {
+      const compound = compounds[i];
+      if (!compound) return mat;
+      return {
+        ...mat,
+        pubchemCid: compound.cid,
+        molecularFormula: compound.molecularFormula || mat.molecularFormula,
+        molecularWeight: compound.molecularWeight ?? mat.molecularWeight,
+        canonicalSmiles: compound.canonicalSmiles || mat.canonicalSmiles,
+        iupacName: compound.iupacName || mat.iupacName,
+      };
+    });
+  }
+  const materials = enrichedGeminiMaterials ?? fallback.experiment.materials;
   const timeline = data.timeline?.length ? data.timeline : fallback.experiment.timeline;
   const budget = buildBudget(materials, data.budget || fallback.experiment.budget, timeline, domain.name);
 
@@ -3365,6 +3452,42 @@ createServer(async (request, response) => {
         return;
       }
       sendJson(response, 200, await resolveCompoundVisual(name));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/compound/sdf") {
+      const cidParam = url.searchParams.get("cid");
+      const type = url.searchParams.get("type") === "3d" ? "3d" : "2d";
+      const name = (url.searchParams.get("name") || "").trim();
+      const cid = parseInt(cidParam || "", 10);
+      if (!cid || isNaN(cid)) {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: "Missing or invalid cid parameter" }));
+        return;
+      }
+      const sdf = await fetchSdfByCid(cid, type, name);
+      if (!sdf) {
+        // Try 2D fallback if 3D was requested and not available
+        const fallback = type === "3d" ? await fetchSdfByCid(cid, "2d", name) : null;
+        if (!fallback) {
+          response.writeHead(404, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: `No SDF available for CID ${cid}` }));
+          return;
+        }
+        response.writeHead(200, {
+          "Content-Type": "chemical/x-mdl-sdfile",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "public, max-age=1800",
+        });
+        response.end(fallback);
+        return;
+      }
+      response.writeHead(200, {
+        "Content-Type": "chemical/x-mdl-sdfile",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=1800",
+      });
+      response.end(sdf);
       return;
     }
 

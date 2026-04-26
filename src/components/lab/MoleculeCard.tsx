@@ -3,18 +3,135 @@ import { ExternalLink, FlaskConical, Loader2, RotateCw } from "lucide-react";
 import type { ExperimentPlan } from "@/lib/labApi";
 import { Molecule3DViewer } from "@/components/lab/Molecule3DViewer";
 
-// ─── PubChem direct lookups (no backend needed) ───────────────────────────────
+// ─── Static lookup: common lab chemicals → PubChem CID
+// Avoids hitting PubChem API for well-known compounds (rate-limit bypass)
+const KNOWN_CIDS: Record<string, number> = {
+  // Cryoprotectants / sugars
+  "trehalose": 7427,
+  "alpha,alpha-trehalose": 7427,
+  "d-trehalose": 7427,
+  "sucrose": 5988,
+  "glucose": 5793,
+  "glycerol": 753,
+  "dmso": 679,
+  "dimethyl sulfoxide": 679,
+  "dmso, cell culture grade": 679,
+  "pvp": 50155966,
+  // Gold nanoparticle synthesis
+  "haucl4": 28103,
+  "hydrogen tetrachloroaurate": 28103,
+  "chloroauric acid": 28103,
+  "gold(iii) chloride": 72313068,
+  "trisodium citrate": 16211978,
+  "sodium citrate": 68641,
+  "ascorbic acid": 54670067,
+  "sodium borohydride": 4311764,
+  "gold": 23985,
+  "gold nanoparticles": 23985,
+  "aunp": 23985,
+  // Electrochemistry
+  "3-mercaptopropionic acid": 2703,
+  "mpa": 2703,
+  "ferrocene": 9914,
+  "edc": 2723794,
+  "sulfo-nhs": 123595,
+  "n-hydroxysuccinimide": 80170,
+  "nhs": 80170,
+  // Cell biology / diagnostics
+  "fitc": 9880,
+  "fluorescein isothiocyanate": 9880,
+  "fitc-dextran": 9880,
+  "dextran": 23615,
+  "bsa": 16211978,
+  "c-reactive protein": 10769,
+  "crp": 10769,
+  "acetate": 175,
+  "acetic acid": 176,
+  "carbon dioxide": 280,
+  "co2": 280,
+  // Solvents / reagents
+  "ethanol": 702,
+  "methanol": 887,
+  "isopropanol": 3776,
+  "isopropyl alcohol": 3776,
+  "acetonitrile": 6342,
+  "chloroform": 6212,
+  "dichloromethane": 6344,
+  "toluene": 1140,
+  "hexane": 8058,
+  "acetone": 180,
+  "water": 962,
+  "hydrogen peroxide": 784,
+  "hydrochloric acid": 313,
+  "sodium hydroxide": 14798,
+  "potassium chloride": 4873,
+  "sodium chloride": 5234,
+  "phosphoric acid": 1004,
+  "sulfuric acid": 1118,
+  "nitric acid": 944,
+  "ammonia": 222,
+  // Other common lab chemicals
+  "tween 20": 443314,
+  "triton x-100": 5590,
+  "pbs": 24978853,
+  "tris": 64799,
+  "hepes": 23831,
+  "edta": 6049,
+  "trypsin": 23682,
+  "formalin": 712,
+};
+
+function knownCidLookup(name: string): number | null {
+  const key = name.trim().toLowerCase();
+  if (KNOWN_CIDS[key] != null) return KNOWN_CIDS[key];
+  // Try stripping common qualifiers: "cell culture grade", "analytical grade", etc.
+  const stripped = key.replace(/[,;].*$/, "").replace(/\s+(grade|cell culture|anhydrous|reagent|analytical|technical|ultrapure|hplc|anhydrous|sterile|pure)\b.*/g, "").trim();
+  return KNOWN_CIDS[stripped] ?? null;
+}
+
+// ─── PubChem direct lookups (rate-limited — use knownCidLookup first) ─────────
+
+let _pubchemQueue: (() => void)[] = [];
+let _pubchemActive = 0;
+const PUBCHEM_CONCURRENCY = 2;
+const PUBCHEM_DELAY_MS = 500;
+
+function pubchemThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    _pubchemQueue.push(() => {
+      fn().then(resolve, reject).finally(() => {
+        _pubchemActive--;
+        setTimeout(_drainPubChem, PUBCHEM_DELAY_MS);
+      });
+    });
+    _drainPubChem();
+  });
+}
+
+function _drainPubChem() {
+  while (_pubchemActive < PUBCHEM_CONCURRENCY && _pubchemQueue.length > 0) {
+    const task = _pubchemQueue.shift()!;
+    _pubchemActive++;
+    task();
+  }
+}
 
 async function pubchemCidByName(name: string): Promise<number | null> {
-  try {
-    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/cids/JSON`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json() as { IdentifierList?: { CID?: number[] } };
-    return data?.IdentifierList?.CID?.[0] ?? null;
-  } catch {
-    return null;
-  }
+  // Static table first — no network call needed
+  const static_cid = knownCidLookup(name);
+  if (static_cid != null) return static_cid;
+
+  return pubchemThrottle(async () => {
+    try {
+      const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/cids/JSON`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json() as { IdentifierList?: { CID?: number[] } };
+      return data?.IdentifierList?.CID?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 // ─── Image sources (waterfall: CID fast → CID PUG → name PUG → Cactus) ──────
@@ -33,8 +150,13 @@ function imgByNameCactus(name: string) {
 }
 function imageSources(name: string, cid: number | null): string[] {
   const list: string[] = [];
-  if (cid) { list.push(imgByCid(cid), imgByCidPug(cid)); }
-  list.push(imgByNamePubchem(name), imgByNameCactus(name));
+  // Prefer CID-based URLs (stable, no name-resolution needed)
+  const effectiveCid = cid ?? knownCidLookup(name);
+  if (effectiveCid) { list.push(imgByCid(effectiveCid), imgByCidPug(effectiveCid)); }
+  // Name-based fallbacks (only if no CID, to reduce PubChem traffic)
+  if (!effectiveCid) {
+    list.push(imgByNamePubchem(name), imgByNameCactus(name));
+  }
   return Array.from(new Set(list));
 }
 
@@ -91,7 +213,6 @@ function StructureImage({ name, cid, alt, className }: { name: string; cid?: num
       onError={() => setIndex(i => i + 1)}
       className={className}
       loading="lazy"
-      crossOrigin="anonymous"
     />
   );
 }
@@ -108,10 +229,13 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
   const visual = domainVisual(plan.domain);
   const materials = plan.materials;
 
-  // Resolve CIDs directly from PubChem for any material missing one
+  // Resolve CIDs: skip names already covered by the static lookup table
   useEffect(() => {
     let active = true;
-    const toResolve = materials.filter(m => !m.pubchemCid).map(m => m.name);
+    // Only hit PubChem for names NOT in the static table and NOT in the plan response
+    const toResolve = materials
+      .filter(m => !m.pubchemCid && knownCidLookup(m.name) == null)
+      .map(m => m.name);
     if (!toResolve.length) return;
 
     setResolvingNames(new Set(toResolve));
@@ -133,12 +257,13 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
     return () => { active = false; };
   }, [plan.id, materials]);
 
-  // Merge static CIDs from plan with dynamically resolved ones
+  // Merge: plan CID → static table → runtime resolved
   const enriched = useMemo(() => materials.map(m => {
-    const cid = m.pubchemCid ?? resolvedCids[resolvedKey(m.name)] ?? null;
+    const cid = m.pubchemCid ?? knownCidLookup(m.name) ?? resolvedCids[resolvedKey(m.name)] ?? null;
     return { ...m, cid };
   }), [materials, resolvedCids]);
 
+  // Only show spinner for names that aren't in the static table
   const isResolving = resolvingNames.size > 0;
 
   // Best compound for 3D viewer: first small molecule with a confirmed CID
