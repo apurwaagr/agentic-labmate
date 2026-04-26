@@ -50,6 +50,12 @@ export type MaterialItem = {
   leadTime: string;
   status: "owned" | "in-stock" | "order";
   notes?: string;
+  pubchemCid?: number;
+  molecularFormula?: string;
+  molecularWeight?: number;
+  canonicalSmiles?: string;
+  iupacName?: string;
+  sourceUri?: string;
 };
 
 export type TimelinePhase = {
@@ -229,37 +235,33 @@ function planSearchText(plan: ExperimentPlan) {
     .toLowerCase();
 }
 
-export const sampleHypotheses = [
-  {
-    id: "diagnostics",
-    label: "Diagnostics",
-    hypothesis:
-      "A paper-based electrochemical biosensor functionalized with anti-CRP antibodies will detect C-reactive protein in whole blood at concentrations below 0.5 mg/L within 10 minutes, matching laboratory ELISA sensitivity without requiring sample preprocessing.",
-  },
-  {
-    id: "gut-health",
-    label: "Gut Health",
-    hypothesis:
-      "Supplementing C57BL/6 mice with Lactobacillus rhamnosus GG for 4 weeks will reduce intestinal permeability by at least 30% compared to controls, measured by FITC-dextran assay, due to upregulation of tight junction proteins claudin-1 and occludin.",
-  },
-  {
-    id: "cell-biology",
-    label: "Cell Biology",
-    hypothesis:
-      "Replacing sucrose with trehalose as a cryoprotectant in the freezing medium will increase post-thaw viability of HeLa cells by at least 15 percentage points compared to the standard DMSO protocol, due to trehalose's superior membrane stabilization at low temperatures.",
-  },
-  {
-    id: "climate",
-    label: "Climate",
-    hypothesis:
-      "Introducing Sporomusa ovata into a bioelectrochemical system at a cathode potential of -400 mV vs SHE will fix CO2 into acetate at a rate of at least 150 mmol/L/day, outperforming current biocatalytic carbon capture benchmarks by at least 20%.",
-  },
-];
+function genericMoleculeCue(label: string, note: string): MoleculeModel {
+  const normalized = label.trim() || "Hypothesis-linked molecular cue";
+
+  return {
+    name: normalized,
+    formula: "Hypothesis cue",
+    note,
+    editableHint: "This view is generated from the active hypothesis and material list. Refine it while checking whether the plan is tracking the right intervention or control molecule.",
+    atoms: [
+      { id: "c1", element: "C", x: -1.1, y: 0.1, z: 0.2 },
+      { id: "o1", element: "O", x: -0.2, y: -0.8, z: 0 },
+      { id: "n1", element: "N", x: 0.9, y: -0.1, z: 0.3 },
+      { id: "c2", element: "C", x: 1.5, y: 0.9, z: -0.2 },
+    ],
+    bonds: [
+      { from: "c1", to: "o1" },
+      { from: "o1", to: "n1" },
+      { from: "n1", to: "c2" },
+    ],
+  };
+}
 
 export function moleculeForPlan(plan: ExperimentPlan): MoleculeModel {
   const domain = plan.domain.toLowerCase();
   const searchText = planSearchText(plan);
   const protocolLinked = searchText.includes("protocols.io");
+  const firstMaterial = plan.materials[0]?.name || "";
 
   if (searchText.includes("trehalose")) {
     return {
@@ -398,6 +400,22 @@ export function moleculeForPlan(plan: ExperimentPlan): MoleculeModel {
         { from: "c1", to: "o2" },
       ],
     };
+  }
+
+  if (firstMaterial) {
+    return genericMoleculeCue(
+      firstMaterial,
+      protocolLinked
+        ? `Representative molecular workspace generated from the first protocol-linked material in the active plan: ${firstMaterial}.`
+        : `Representative molecular workspace generated from the leading material in the active hypothesis: ${firstMaterial}.`,
+    );
+  }
+
+  if (plan.hypothesis.trim()) {
+    return genericMoleculeCue(
+      plan.hypothesis.split(/[,.]/)[0].slice(0, 60),
+      "Representative molecular workspace generated from the active hypothesis because no specific reagent match was inferred yet.",
+    );
   }
 
   if (domain.includes("cell biology")) {

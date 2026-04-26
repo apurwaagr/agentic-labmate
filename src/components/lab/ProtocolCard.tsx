@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, BookOpen, ChevronDown, Clock3, TestTube2 } from "lucide-react";
-import type { ProtocolStep } from "@/lib/labApi";
+import type { MaterialItem, ProtocolStep } from "@/lib/labApi";
 
 const riskColor = {
   low: "bg-success-soft text-success border-success/30",
@@ -8,7 +8,7 @@ const riskColor = {
   high: "bg-danger-soft text-danger border-danger/30",
 };
 
-export function ProtocolCard({ steps }: { steps: ProtocolStep[] }) {
+export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[]; materials?: MaterialItem[] }) {
   const [open, setOpen] = useState<string | null>(steps[0]?.id ?? null);
 
   return (
@@ -27,6 +27,18 @@ export function ProtocolCard({ steps }: { steps: ProtocolStep[] }) {
       </header>
 
       <div className="grid gap-3 p-4">
+        {materials.length > 0 && (
+          <div className="rounded-2xl border border-border bg-panel p-4">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Pulled materials</div>
+            <div className="flex flex-wrap gap-2">
+              {materials.map((item) => (
+                <span key={`${item.catalogNumber}-${item.name}`} className="rounded-full border border-border bg-muted/20 px-3 py-1.5 text-[11px]">
+                  {item.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {steps.map((step, index) => {
           const isOpen = open === step.id;
           return (

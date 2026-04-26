@@ -124,6 +124,7 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
   const primaryModel = useMemo(() => moleculeForPlan(plan), [plan]);
   const presets = useMemo(() => comparatorModelsForPlan(plan, primaryModel), [plan, primaryModel]);
   const protocolContext = useMemo(() => protocolContextForPlan(plan), [plan]);
+  const primaryCompound = useMemo(() => plan.materials.find((item) => item.pubchemCid), [plan]);
   const [presetIndex, setPresetIndex] = useState(0);
   const [mode, setMode] = useState<"2d" | "3d">("3d");
   const [rotation, setRotation] = useState(18);
@@ -347,6 +348,33 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
           <div className="text-muted-foreground">Drag atoms to sketch changes</div>
         </div>
       </div>
+
+      {presetIndex === 0 && primaryCompound?.pubchemCid && (
+        <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+          <div className="mb-2 text-[11px] font-medium text-foreground">PubChem structure</div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <img
+              src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${primaryCompound.pubchemCid}/PNG?image_size=large`}
+              alt={`${primaryCompound.name} structure from PubChem`}
+              className="h-28 w-28 rounded-xl border border-border bg-white object-contain"
+            />
+            <div className="space-y-1 text-[11px] text-muted-foreground">
+              <div>{primaryCompound.name}</div>
+              {primaryCompound.molecularFormula && <div>Formula: {primaryCompound.molecularFormula}</div>}
+              {typeof primaryCompound.molecularWeight === "number" && <div>Molecular weight: {primaryCompound.molecularWeight.toFixed(2)}</div>}
+              {primaryCompound.iupacName && <div>IUPAC: {primaryCompound.iupacName}</div>}
+              <a
+                href={primaryCompound.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${primaryCompound.pubchemCid}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex rounded-full border border-border bg-panel px-2 py-1 text-foreground"
+              >
+                Open PubChem record
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-3">

@@ -37,6 +37,8 @@ export function Navigator({
   onDeleteProject: (projectId: string) => void;
   agentLogs: AgentLogItem[];
 }) {
+  const liveAgentCount = agentLogs.filter((log) => log.state === "active").length;
+
   return (
     <aside className="w-[300px] shrink-0 border-r border-border bg-[radial-gradient(circle_at_top,_hsl(var(--primary-soft)),_transparent_45%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--surface)))]">
       <div className="flex h-full flex-col gap-5 px-4 py-5">
@@ -57,7 +59,7 @@ export function Navigator({
             </div>
             <div className="rounded-xl border border-border bg-muted/40 p-3">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Live agents</div>
-              <div className="mt-1 text-lg font-semibold">3</div>
+              <div className="mt-1 text-lg font-semibold">{liveAgentCount}</div>
             </div>
           </div>
         </div>

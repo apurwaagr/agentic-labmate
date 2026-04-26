@@ -57,6 +57,23 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
                   </div>
                 </div>
                 {item.notes && <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{item.notes}</p>}
+                {(item.molecularFormula || item.pubchemCid || item.iupacName) && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                    {item.molecularFormula && <span className="rounded-full bg-panel px-2 py-1">Formula {item.molecularFormula}</span>}
+                    {typeof item.molecularWeight === "number" && <span className="rounded-full bg-panel px-2 py-1">MW {item.molecularWeight.toFixed(2)}</span>}
+                    {item.pubchemCid && (
+                      <a
+                        href={item.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${item.pubchemCid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full bg-panel px-2 py-1 hover:text-foreground"
+                      >
+                        PubChem CID {item.pubchemCid}
+                      </a>
+                    )}
+                    {item.iupacName && <span className="rounded-full bg-panel px-2 py-1">{item.iupacName}</span>}
+                  </div>
+                )}
               </div>
               <div className="rounded-2xl border border-border bg-panel px-4 py-3 text-center xl:w-28">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Unit cost</div>

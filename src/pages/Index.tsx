@@ -13,7 +13,6 @@ import {
   budgetRegionByCode,
   fetchExperimentPlan,
   fetchReviews,
-  sampleHypotheses,
   type BudgetRegion,
   type ExperimentPlan,
   type ReviewRecord,
@@ -293,15 +292,6 @@ const Index = () => {
     setComposerOpen(false);
   }
 
-  function applySample(sampleId: string) {
-    const sample = sampleHypotheses.find((item) => item.id === sampleId);
-    if (!sample) {
-      return;
-    }
-    setDraftName(sample.label);
-    setDraftHypothesis(sample.hypothesis);
-  }
-
   function resetDraftProject() {
     setDraftName("");
     setDraftHypothesis("");
@@ -402,28 +392,6 @@ const Index = () => {
                           placeholder="Example: Trehalose Cryopreservation Study"
                           className="w-full rounded-2xl border border-border bg-panel px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         />
-                      </div>
-
-                      <div>
-                        <label className="mb-2 block text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                          Quick templates
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {sampleHypotheses.map((sample) => (
-                            <button
-                              key={sample.id}
-                              type="button"
-                              onClick={() => applySample(sample.id)}
-                              className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                                draftHypothesis === sample.hypothesis
-                                  ? "border-primary/30 bg-primary text-primary-foreground"
-                                  : "border-border bg-panel hover:bg-muted"
-                              }`}
-                            >
-                              {sample.label}
-                            </button>
-                          ))}
-                        </div>
                       </div>
 
                       <div>
@@ -600,7 +568,7 @@ const Index = () => {
 
             {activePlan && (
               <>
-                <ProtocolCard steps={activePlan.steps} />
+                <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
                 <ValidationCard validation={activePlan.validation} />
                 <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                   <SupplyChainCard plan={activePlan} budgetRegion={budgetRegion} />

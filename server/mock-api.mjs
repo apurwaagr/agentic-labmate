@@ -1,34 +1,23 @@
 import { createServer } from "node:http";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { URL } from "node:url";
 
+loadEnvFile(".env");
 loadEnvFile(".env.local");
 
 const port = Number(process.env.PORT || 8787);
 const geminiApiKey = process.env.GEMINI_API_KEY || "";
 const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const protocolsIoApiKey = process.env.PROTOCOLS_IO_API_KEY || "";
 const openAlexApiUrl = process.env.OPENALEX_API_URL || "https://api.openalex.org";
 const crossrefApiUrl = process.env.CROSSREF_API_URL || "https://api.crossref.org";
+const pubchemApiUrl = process.env.PUBCHEM_API_URL || "https://pubchem.ncbi.nlm.nih.gov/rest/pug";
 const crossrefMailto = process.env.CROSSREF_MAILTO || "";
 const openAlexMailto = process.env.OPENALEX_MAILTO || crossrefMailto || "";
+const reviewStorePath = join(process.cwd(), "server", ".data", "reviews.json");
 
-const reviewStore = [
-  {
-    experimentId: "diagnostics-paper-crp",
-    section: "Sample handling",
-    reviewer: "Dr. Patel",
-    correction: "Explicitly cap hemolysis risk and add a plasma-separation fallback if whole blood noise exceeds the detection threshold.",
-    severity: "high",
-  },
-  {
-    experimentId: "cell-biology-trehalose",
-    section: "Cryopreservation step",
-    reviewer: "M. Chen",
-    correction: "Add a viability gate at 2 hours post-thaw before committing to the 24-hour assay.",
-    severity: "medium",
-  },
-];
+const reviewStore = loadReviewStore();
 
 const apiContracts = [
   {
@@ -75,8 +64,23 @@ const apiContracts = [
   },
 ];
 
-const defaultHypothesis =
-  "A paper-based electrochemical biosensor functionalized with anti-CRP antibodies will detect C-reactive protein in whole blood at concentrations below 0.5 mg/L within 10 minutes, matching laboratory ELISA sensitivity without requiring sample preprocessing.";
+function loadReviewStore() {
+  try {
+    if (!existsSync(reviewStorePath)) {
+      return [];
+    }
+
+    const parsed = JSON.parse(readFileSync(reviewStorePath, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistReviewStore() {
+  mkdirSync(dirname(reviewStorePath), { recursive: true });
+  writeFileSync(reviewStorePath, JSON.stringify(reviewStore, null, 2));
+}
 
 function loadEnvFile(filename) {
   const filePath = join(process.cwd(), filename);
@@ -486,6 +490,82 @@ function keywordCost(label = "") {
   return 160;
 }
 
+function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
+  const text = `${hypothesis} ${parsed.intervention || ""} ${parsed.control || ""} ${parsed.outcome || ""} ${evidencePack.items
+    .map((item) => item.title)
+    .join(" ")}`.toLowerCase();
+  const candidates = [];
+  const seen = new Set();
+
+  function pushCandidate(name) {
+    const normalized = name.trim();
+    if (!normalized) {
+      return;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    candidates.push(normalized);
+  }
+
+  const knownPatterns = [
+    { pattern: /trehalose/, label: "Trehalose" },
+    { pattern: /\bdmso\b/, label: "DMSO, cell culture grade" },
+    { pattern: /\bhela\b/, label: "HeLa cells" },
+    { pattern: /c-reactive protein|\bcrp\b/, label: "C-reactive protein target" },
+    { pattern: /anti-?crp antibody|crp antibod/, label: "Anti-CRP antibody" },
+    { pattern: /electrochemical biosensor|paper-based electrochemical biosensor/, label: "Paper-based electrochemical biosensor substrate" },
+    { pattern: /lactobacillus rhamnosus gg/, label: "Lactobacillus rhamnosus GG" },
+    { pattern: /fitc-dextran/, label: "FITC-dextran" },
+    { pattern: /claudin-1/, label: "Claudin-1 antibody" },
+    { pattern: /occludin/, label: "Occludin antibody" },
+    { pattern: /sporomusa ovata/, label: "Sporomusa ovata culture" },
+    { pattern: /carbon dioxide|\bco2\b/, label: "Carbon dioxide feed" },
+    { pattern: /acetate/, label: "Acetate assay kit" },
+    { pattern: /cathode/, label: "Cathode electrode assembly" },
+  ];
+
+  for (const entry of knownPatterns) {
+    if (entry.pattern.test(text)) {
+      pushCandidate(entry.label);
+    }
+  }
+
+  [parsed.intervention, parsed.subject, parsed.outcome, parsed.control]
+    .map((item) => (item || "").trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      item
+        .split(/,|;|\band\b|\bwith\b|\busing\b|\bversus\b|\bvs\b/i)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 3 && !/^primary |^matched |^standard /i.test(part))
+        .forEach(pushCandidate);
+    });
+
+  return candidates.slice(0, 6);
+}
+
+function inferQuantity(label = "", index = 0) {
+  const lower = label.toLowerCase();
+
+  if (/(cell|culture|mice|mouse)/.test(lower)) return "1 lot";
+  if (/(antibody|kit|assay)/.test(lower)) return "1 kit";
+  if (/(trehalose|dmso|dextran|buffer|reagent)/.test(lower)) return "1 bottle";
+  if (/(co2|carbon dioxide|electrode|reactor|substrate)/.test(lower)) return index === 0 ? "1 setup" : "1 unit";
+  return index === 0 ? "1 lot" : "1 unit";
+}
+
+function inferLeadTime(label = "") {
+  const lower = label.toLowerCase();
+
+  if (/(cell|culture|mice|mouse|sporomusa)/.test(lower)) return "4-7 d";
+  if (/(antibody|kit|assay|electrode)/.test(lower)) return "3-5 d";
+  if (/(trehalose|dmso|dextran|buffer|reagent|co2)/.test(lower)) return "2-4 d";
+  return "3-5 d";
+}
+
 function evidenceUrl(item) {
   if (item.url) {
     return item.url;
@@ -593,10 +673,69 @@ async function fetchCrossrefEvidence(hypothesis) {
   );
 }
 
+async function fetchProtocolsIoEvidence(hypothesis) {
+  if (!protocolsIoApiKey) {
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    filter: "public",
+    key: hypothesis,
+  });
+
+  const json = await fetchJson(`https://www.protocols.io/api/v3/protocols?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${protocolsIoApiKey}`,
+    },
+  });
+
+  const items = Array.isArray(json?.items) ? json.items : [];
+
+  return items.map((item) =>
+    normalizeEvidence(hypothesis, {
+      title: item.title || "Untitled protocol",
+      abstract: item.description || item.doi || "",
+      year: item.published_on ? new Date(item.published_on * 1000).getFullYear() : null,
+      doi: item.doi ? String(item.doi).replace(/^https?:\/\/(dx\.)?doi\.org\//, "") : "",
+      url: item.uri ? `https://www.protocols.io/view/${item.uri}` : "https://www.protocols.io/",
+      source: "protocols.io",
+      provenance: "protocols.io",
+    }),
+  );
+}
+
+async function fetchPubChemCompoundByName(name) {
+  const encodedName = encodeURIComponent(name.trim());
+  if (!encodedName) {
+    return null;
+  }
+
+  const json = await fetchJson(
+    `${pubchemApiUrl}/compound/name/${encodedName}/property/Title,MolecularFormula,MolecularWeight,CanonicalSMILES,IUPACName/JSON`,
+  ).catch(() => null);
+
+  const properties = json?.PropertyTable?.Properties;
+  const property = Array.isArray(properties) ? properties[0] : null;
+  if (!property?.CID) {
+    return null;
+  }
+
+  return {
+    cid: property.CID,
+    title: property.Title || name,
+    molecularFormula: property.MolecularFormula || "",
+    molecularWeight: typeof property.MolecularWeight === "number" ? property.MolecularWeight : null,
+    canonicalSmiles: property.CanonicalSMILES || "",
+    iupacName: property.IUPACName || "",
+    url: `https://pubchem.ncbi.nlm.nih.gov/compound/${property.CID}`,
+  };
+}
+
 async function retrieveEvidencePack(hypothesis) {
   const settled = await Promise.allSettled([
     fetchOpenAlexEvidence(hypothesis),
     fetchCrossrefEvidence(hypothesis),
+    fetchProtocolsIoEvidence(hypothesis),
   ]);
 
   const combined = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
@@ -617,7 +756,7 @@ async function retrieveEvidencePack(hypothesis) {
   return {
     items: deduped.slice(0, 8),
     providers: settled.map((result, index) => ({
-      name: index === 0 ? "openalex" : "crossref",
+      name: index === 0 ? "openalex" : index === 1 ? "crossref" : "protocols.io",
       ok: result.status === "fulfilled",
     })),
   };
@@ -652,21 +791,33 @@ function evidenceNovelty(hypothesis, evidencePack) {
   };
 }
 
-function buildMaterialsFromEvidence(parsed, hypothesis) {
-  const candidates = [parsed.intervention, parsed.subject, parsed.outcome, parsed.control]
-    .map((item) => (item || "").trim())
-    .filter(Boolean);
+async function buildMaterialsFromEvidence(parsed, hypothesis, evidencePack) {
+  const candidates = inferMaterialCandidates(parsed, hypothesis, evidencePack);
+  const compounds = await Promise.all(candidates.map((label) => fetchPubChemCompoundByName(label).catch(() => null)));
+  const fallbackSource = evidencePack.items[0]?.source || "Literature evidence";
 
-  return candidates.slice(0, 4).map((label, index) => ({
-    name: label,
-    catalogNumber: `${slugCatalog(label)}-${index + 1}`,
-    supplier: keywordSupplier(label),
-    quantity: index === 0 ? "1 lot" : index === 1 ? "1 system" : "1 kit",
-    unitCostUsd: keywordCost(label),
-    leadTime: index === 1 ? "3-5 d" : "2-4 d",
-    status: index === 0 ? "order" : index === 1 ? "in-stock" : "order",
-    notes: "Derived from hypothesis structure and literature evidence; replace with procurement-system records when available.",
-  }));
+  return candidates.map((label, index) => {
+    const compound = compounds[index];
+
+    return {
+      name: compound?.title || label,
+      catalogNumber: compound?.cid ? `CID-${compound.cid}` : `${slugCatalog(label)}-${index + 1}`,
+      supplier: compound ? "PubChem" : fallbackSource,
+      quantity: inferQuantity(label, index),
+      unitCostUsd: keywordCost(label),
+      leadTime: inferLeadTime(label),
+      status: index === 0 ? "order" : index === 1 ? "in-stock" : /dmso|trehalose|buffer|co2/.test(label.toLowerCase()) ? "in-stock" : "order",
+      notes: compound
+        ? "Matched to a live PubChem compound record and ranked against retrieved literature evidence."
+        : "Derived from retrieved literature and hypothesis structure; no PubChem compound match was found.",
+      pubchemCid: compound?.cid,
+      molecularFormula: compound?.molecularFormula || undefined,
+      molecularWeight: compound?.molecularWeight || undefined,
+      canonicalSmiles: compound?.canonicalSmiles || undefined,
+      iupacName: compound?.iupacName || undefined,
+      sourceUri: compound?.url || undefined,
+    };
+  });
 }
 
 function buildDynamicSteps(parsed, evidencePack) {
@@ -756,7 +907,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
   const domain = detectDomain(hypothesis);
   const parsed = await parseHypothesis(hypothesis);
   const evidencePack = await retrieveEvidencePack(hypothesis);
-  const materials = buildMaterialsFromEvidence(parsed, hypothesis);
+  const materials = await buildMaterialsFromEvidence(parsed, hypothesis, evidencePack);
   const steps = buildDynamicSteps(parsed, evidencePack);
   const timeline = buildDynamicTimeline(steps);
   const budget = buildBudget(
@@ -1325,6 +1476,70 @@ function planFallback(hypothesis) {
   };
 }
 
+async function buildParsedPlan(hypothesis, relatedReviews) {
+  const domain = detectDomain(hypothesis);
+  const parsed = hypothesisParseFallback(hypothesis);
+  const emptyEvidencePack = { items: [], providers: [] };
+  const materials = await buildMaterialsFromEvidence(parsed, hypothesis, emptyEvidencePack);
+  const steps = buildDynamicSteps(parsed, emptyEvidencePack);
+  const timeline = buildDynamicTimeline(steps);
+  const budget = buildBudget(
+    materials,
+    {
+      reagentsUsd: materials.reduce((sum, item) => sum + item.unitCostUsd, 0),
+      equipmentUsd: 0,
+      reliability: "Dynamic fallback generated from the current hypothesis only because external retrieval was unavailable.",
+      assumptions: [
+        "This scaffold is generated directly from the current hypothesis and does not yet include literature-backed protocol specificity.",
+        "Material identities may still need manual confirmation against your lab's preferred workflow.",
+      ],
+    },
+    timeline,
+    domain.name,
+  );
+
+  return {
+    experiment: {
+      id: domain.id,
+      project: domain.project,
+      hypothesis,
+      plainEnglish: domain.plainEnglish,
+      domain: domain.name,
+      metrics: {
+        confidence: "55%",
+        novelty: "unverified",
+        sustainability: "65",
+      },
+      novelty: {
+        signal: "not found",
+        summary: "External retrieval was unavailable, so this plan is currently driven by the hypothesis structure rather than retrieved references.",
+        references: [],
+      },
+      materials,
+      steps,
+      timeline,
+      budget,
+      benchmark: buildDynamicBenchmark(timeline.reduce((sum, phase) => sum + phase.durationDays, 0), budget),
+      validation: {
+        primaryMetric: parsed.outcome || "Primary assay readout",
+        successCriteria: `Meet the stated hypothesis threshold (${parsed.threshold || "see hypothesis"}) with a clear intervention-versus-control separation.`,
+        failureCriteria: [
+          "The intervention, control, or assay mapping is still ambiguous.",
+          "Critical materials cannot be sourced or validated.",
+          "Pilot data do not produce an interpretable signal.",
+        ],
+        decisionGates: steps.map((step) => step.decisionGate).filter(Boolean),
+      },
+      reviewAdaptations: relatedReviews.map((review) => ({
+        section: review.section,
+        change: review.correction,
+        impact: "Applied to the regenerated plan as an explicit guardrail or decision gate.",
+      })),
+      sources: [],
+    },
+  };
+}
+
 async function parseHypothesis(hypothesis) {
   const domain = detectDomain(hypothesis);
   if (!geminiApiKey) {
@@ -1373,7 +1588,7 @@ async function literatureQc(hypothesis) {
   const apiNovelty = evidenceNovelty(hypothesis, evidencePack);
 
   if (!geminiApiKey) {
-    return evidencePack.items.length > 0 ? apiNovelty : noveltyFallback(hypothesis);
+    return apiNovelty;
   }
 
   const schema = {
@@ -1411,7 +1626,7 @@ ${hypothesis}
           : apiNovelty.references,
     };
   } catch {
-    return evidencePack.items.length > 0 ? apiNovelty : noveltyFallback(hypothesis);
+    return apiNovelty;
   }
 }
 
@@ -1424,7 +1639,7 @@ async function generatePlan(hypothesis) {
   try {
     fallback = await buildEvidenceBackedPlan(hypothesis, relatedReviews);
   } catch {
-    fallback = planFallback(hypothesis);
+    fallback = await buildParsedPlan(hypothesis, relatedReviews);
   }
 
   if (!geminiApiKey) {
@@ -1781,7 +1996,7 @@ async function chatReply(question, hypothesis, reviews, planContext) {
           id: detectDomain(hypothesis).id,
           hypothesis,
           domain: planContext.domain || detectDomain(hypothesis).name,
-          novelty: planContext.novelty || noveltyFallback(hypothesis),
+          novelty: planContext.novelty || { signal: "not found", summary: "No novelty context was supplied for chat.", references: [] },
           validation: planContext.validation || { primaryMetric: "", successCriteria: "", failureCriteria: [], decisionGates: [] },
           reviewAdaptations: planContext.reviewAdaptations || [],
           materials: planContext.materials || planContext.keyMaterials || [],
@@ -1892,6 +2107,10 @@ createServer(async (request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${port}`);
 
   try {
+    const requireHypothesis = () => {
+      throw new Error("A hypothesis is required for this endpoint.");
+    };
+
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
         status: "ok",
@@ -1909,28 +2128,28 @@ createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/experiments/parse") {
       const body = await readBody(request);
-      const hypothesis = body.hypothesis || defaultHypothesis;
+      const hypothesis = body.hypothesis || requireHypothesis();
       sendJson(response, 200, await parseHypothesis(hypothesis));
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/literature/qc") {
       const body = await readBody(request);
-      const hypothesis = body.hypothesis || defaultHypothesis;
+      const hypothesis = body.hypothesis || requireHypothesis();
       sendJson(response, 200, await literatureQc(hypothesis));
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/experiments/plan") {
       const body = await readBody(request);
-      const hypothesis = body.hypothesis || defaultHypothesis;
+      const hypothesis = body.hypothesis || requireHypothesis();
       sendJson(response, 200, await generatePlan(hypothesis));
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/chat") {
       const body = await readBody(request);
-      const hypothesis = body.hypothesis || defaultHypothesis;
+      const hypothesis = body.hypothesis || requireHypothesis();
       const experimentId = body.experimentId || detectDomain(hypothesis).id;
       const requestReviews = Array.isArray(body.reviews) ? body.reviews : [];
       const reviews = requestReviews.length > 0 ? requestReviews : reviewStore.filter((review) => review.experimentId === experimentId);
@@ -1950,19 +2169,20 @@ createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/reviews") {
       const body = await readBody(request);
       const review = {
-        experimentId: body.experimentId || detectDomain(defaultHypothesis).id,
+        experimentId: body.experimentId || "custom-experiment",
         section: body.section || "General",
         reviewer: body.reviewer || "Scientist reviewer",
         correction: body.correction || "No correction provided.",
         severity: body.severity || "medium",
       };
       reviewStore.unshift(review);
+      persistReviewStore();
       sendJson(response, 201, review);
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/knowledge-graph/context") {
-      const hypothesis = url.searchParams.get("hypothesis") || defaultHypothesis;
+      const hypothesis = url.searchParams.get("hypothesis") || requireHypothesis();
       const plan = await generatePlan(hypothesis);
       const reviews = reviewStore.filter((review) => review.experimentId === plan.experiment.id);
       sendJson(response, 200, knowledgeGraphContext(plan, reviews));
