@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Beaker, DollarSign, Leaf, Loader2, Menu, PanelRightOpen, Plus, ShieldCheck, Sparkles, TestTube2, Timer, Trash2, Wand2, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { Beaker, ChevronRight, DollarSign, Leaf, Loader2, Menu, PanelRightOpen, Plus, ShieldCheck, Sparkles, TestTube2, Timer, Trash2, Wand2, X } from "lucide-react";
 import { Navigator, type AgentLogItem, type ProjectListItem } from "@/components/lab/Navigator";
 import { ContextStore } from "@/components/lab/ContextStore";
 import { ProtocolCard } from "@/components/lab/ProtocolCard";
@@ -29,7 +30,7 @@ const BUDGET_REGION_STORAGE_KEY = "agentic-labmate-budget-region";
 
 type MainTab = "protocol" | "budget" | "timeline" | "validation";
 
-const TAB_CONFIG: { id: MainTab; label: string; icon: React.ReactNode }[] = [
+const TAB_CONFIG: { id: MainTab; label: string; icon: ReactNode }[] = [
   { id: "protocol",   label: "Protocol",         icon: <TestTube2 className="size-3.5" /> },
   { id: "budget",     label: "Budget & Compare",  icon: <DollarSign className="size-3.5" /> },
   { id: "timeline",   label: "Timeline",          icon: <Timer className="size-3.5" /> },
