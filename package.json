@@ -4,10 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "sh -c 'node server/mock-api.mjs & vite'",
+    "dev": "sh -c './venv/bin/python -m backend.main & vite'",
     "dev:ui": "vite",
-    "dev:real": "vite --host 127.0.0.1 --port 8080",
-    "api": "node server/mock-api.mjs",
+    "dev:ui:e2e": "vite --host 127.0.0.1 --port 4173 --strictPort",
+    "api": "./venv/bin/python -m backend.main",
+    "api:mock": "node server/mock-api.mjs",
     "api:py": "./venv/bin/python -m backend.api_server",
     "pipeline:py": "./venv/bin/python -m backend.pipeline",
     "build": "vite build",
@@ -16,10 +17,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:pipeline:backend": "./venv/bin/python -m pytest tests/e2e/test_pipeline_stream.py tests/e2e/test_provider_policy.py -q",
-    "test:pipeline:browser": "playwright test e2e/pipeline.spec.ts",
-    "test:pipeline:repeatability": "./venv/bin/python -m pytest tests/e2e/test_repeatability.py -q",
-    "test:pipeline:all": "npm run test:pipeline:backend && npm run test:pipeline:browser && npm run test:pipeline:repeatability"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -74,7 +72,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@playwright/test": "^1.59.1",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
@@ -89,12 +86,13 @@
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
     "lovable-tagger": "^1.1.13",
-    "playwright": "^1.54.2",
     "postcss": "^8.5.6",
+    "playwright": "^1.52.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@playwright/test": "^1.52.0"
   }
 }

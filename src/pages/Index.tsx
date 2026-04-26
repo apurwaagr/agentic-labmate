@@ -15,8 +15,6 @@ import {
   fetchReviews,
   type BudgetRegion,
   type ExperimentPlan,
-  type NoveltySignal,
-  type PlanStreamEvent,
   type ReviewRecord,
 } from "@/lib/labApi";
 
@@ -82,8 +80,6 @@ const Index = () => {
   const [budgetRegion, setBudgetRegion] = useState<BudgetRegion>(budgetRegionByCode("DE"));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [earlyNovelty, setEarlyNovelty] = useState<NoveltySignal | null>(null);
-  const [stageMessage, setStageMessage] = useState<string | null>(null);
   const logIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -145,7 +141,14 @@ const Index = () => {
   const activeReviews = activeProject ? reviewsByProject[activeProject.id] ?? [] : [];
 
   useEffect(() => {
-    if (activeProject && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
+    const shouldAutoGenerate =
+      activeProject &&
+      activeProject.status === "draft" &&
+      !plansByProject[activeProject.id] &&
+      Boolean(activeProject.hypothesis) &&
+      !loading;
+
+    if (shouldAutoGenerate && activeProject) {
       void generateForProject(activeProject.id, activeProject.hypothesis);
     }
     // generateForProject is intentionally excluded to avoid retrigger loops.
@@ -211,30 +214,6 @@ const Index = () => {
     setProjects((current) => current.map((project) => (project.id === projectId ? updater(project) : project)));
   }
 
-  function markLogByStage(stage: PlanStreamEvent["type"]) {
-    const stageToLogId: Partial<Record<PlanStreamEvent["type"], string>> = {
-      qc_complete: "novelty",
-      graph_ready: "template",
-      plan_generating: "plan",
-      plan_complete: "validate",
-    };
-    const targetId = stageToLogId[stage];
-    if (!targetId) return;
-
-    clearLogInterval();
-    setAgentLogs((current) => {
-      let advanced = false;
-      return current.map((log) => {
-        if (advanced) return log;
-        if (log.id === targetId) {
-          advanced = true;
-          return { ...log, state: "active", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) };
-        }
-        return { ...log, state: "done" };
-      });
-    });
-  }
-
   async function generateForProject(projectId: string, hypothesis: string) {
     const targetProject = projects.find((project) => project.id === projectId);
     if (!targetProject) {
@@ -243,8 +222,6 @@ const Index = () => {
 
     setLoading(true);
     setError(null);
-    setEarlyNovelty(null);
-    setStageMessage("Parsing hypothesis and kicking off literature QC...");
     startLogAnimation(targetProject.name);
     updateProject(projectId, (project) => ({
       ...project,
@@ -254,38 +231,7 @@ const Index = () => {
     }));
 
     try {
-      const planResponse = await fetchExperimentPlan(hypothesis, (event) => {
-        markLogByStage(event.type);
-
-        switch (event.type) {
-          case "qc_complete": {
-            setEarlyNovelty(event.data);
-            setStageMessage(`Literature QC: ${event.data.signal}. ${event.data.summary}`);
-            updateProject(projectId, (project) => ({
-              ...project,
-              novelty: event.data.signal,
-              updatedAt: new Date().toISOString(),
-            }));
-            break;
-          }
-          case "graph_ready": {
-            setStageMessage(`Knowledge graph ready: ingested ${event.data.papers_ingested} papers into workspace ${event.data.workspace_slug}.`);
-            break;
-          }
-          case "plan_generating": {
-            setStageMessage(event.data.message || "Generating plan from knowledge graph...");
-            break;
-          }
-          case "plan_complete": {
-            setStageMessage("Plan ready. Validating decision gates...");
-            break;
-          }
-          case "error": {
-            setStageMessage(`Pipeline error: ${event.data.message}`);
-            break;
-          }
-        }
-      });
+      const planResponse = await fetchExperimentPlan(hypothesis);
       const reviewResponse = await fetchReviews(planResponse.experiment.id);
 
       setPlansByProject((current) => ({ ...current, [projectId]: planResponse.experiment }));
@@ -300,7 +246,6 @@ const Index = () => {
         updatedAt: new Date().toISOString(),
       }));
 
-      setStageMessage(null);
       finalizeLogs("done", targetProject.name);
     } catch (generationError) {
       updateProject(projectId, (project) => ({
@@ -616,47 +561,11 @@ const Index = () => {
             )}
 
             {loading && (
-              <section className="space-y-3">
-                <div className="rounded-2xl border border-border bg-panel p-5 shadow-sm">
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    {stageMessage ?? "The planning agent is working through retrieval, novelty QC, and operational assembly."}
-                  </div>
+              <section className="rounded-2xl border border-border bg-panel p-5 shadow-sm">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  The planning agent is working through retrieval, novelty QC, and operational assembly. If this takes longer than expected, check backend logs for `[plan:*]` timing lines.
                 </div>
-                {earlyNovelty && (
-                  <div className="rounded-2xl border border-accent/30 bg-accent-soft/30 p-5 shadow-sm">
-                    <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-accent-foreground">
-                      <Sparkles className="size-3.5" />
-                      Literature QC · early signal
-                    </div>
-                    <div className="text-sm font-semibold">
-                      {earlyNovelty.signal}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {earlyNovelty.summary}
-                    </div>
-                    {earlyNovelty.references.length > 0 && (
-                      <ul className="mt-3 space-y-2 text-xs">
-                        {earlyNovelty.references.slice(0, 3).map((ref) => (
-                          <li key={`${ref.title}-${ref.source}`} className="rounded-xl border border-border bg-panel p-2">
-                            <div className="font-medium text-foreground/90">{ref.title}</div>
-                            <div className="mt-0.5 text-muted-foreground">{ref.source}</div>
-                            {ref.uri && (
-                              <a
-                                href={ref.uri}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="mt-0.5 inline-block text-primary underline-offset-2 hover:underline"
-                              >
-                                {ref.uri}
-                              </a>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
               </section>
             )}
 

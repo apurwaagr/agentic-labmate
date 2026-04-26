@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import uuid
+import json
+import logging
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .literature_qc import check_literature
 from .parser import parse_user_input
 from .schemas import ParsedHypothesis
+
+logger = logging.getLogger(__name__)
 
 DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
     "cell biology": {"base_reagents": 420, "base_equipment": 180, "base_days": 10, "owner_exec": "Lab Scientist", "sustainability_bias": 66},
@@ -15,6 +21,23 @@ DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
     "diagnostics": {"base_reagents": 490, "base_equipment": 260, "base_days": 12, "owner_exec": "Assay Scientist", "sustainability_bias": 64},
     "general science": {"base_reagents": 400, "base_equipment": 200, "base_days": 11, "owner_exec": "Scientist", "sustainability_bias": 62},
 }
+
+def _emit_timing(message: str) -> None:
+    """Send timing diagnostics to both logger and stdout."""
+    logger.info(message)
+    print(message)
+
+
+def _load_knowledge_base() -> Dict[str, Any]:
+    """Load common reagents and protocols from knowledge base."""
+    kb_path = Path(__file__).parent.parent / "data" / "common_reagents.json"
+    if kb_path.exists():
+        with open(kb_path) as f:
+            return json.load(f)
+    return {"reagents": [], "protocols": []}
+
+
+_KNOWLEDGE_BASE = _load_knowledge_base()
 
 
 def _domain_profile(domain: str) -> Dict[str, Any]:
@@ -75,15 +98,125 @@ def _sustainability_score(parsed: ParsedHypothesis, profile: Dict[str, Any], com
     return max(45, min(base - int(complexity * 8), 85))
 
 
+def _find_reagent_in_kb(search_term: str) -> Dict[str, Any] | None:
+    """Search knowledge base for a reagent by name."""
+    search_lower = search_term.lower()
+    for reagent in _KNOWLEDGE_BASE.get("reagents", []):
+        if reagent["name"].lower() in search_lower or search_lower in reagent["name"].lower():
+            return reagent
+    return None
+
+
+def _find_protocol_in_kb(search_terms: List[str], hypothesis: str) -> Dict[str, Any] | None:
+    """Search knowledge base for a protocol by keywords."""
+    search_lower = " ".join(search_terms).lower()
+    hypothesis_lower = hypothesis.lower()
+    
+    for protocol in _KNOWLEDGE_BASE.get("protocols", []):
+        protocol_name = protocol["name"].lower()
+        # Check if any search term matches protocol name
+        if any(term.lower() in protocol_name for term in search_terms):
+            return protocol
+        # Check if hypothesis contains protocol keywords
+        if protocol_name in hypothesis_lower:
+            return protocol
+        # Special case matching for common assay types
+        if "cryoprotectant" in hypothesis_lower and "cryopreservation" in protocol_name:
+            return protocol
+        if "cryopreservation" in hypothesis_lower and "cryopreservation" in protocol_name:
+            return protocol
+        if "permeability" in hypothesis_lower and "permeability" in protocol_name:
+            return protocol
+        if "fitc-dextran" in hypothesis_lower and "permeability" in protocol_name:
+            return protocol
+        if "elisa" in hypothesis_lower and "elisa" in protocol_name:
+            return protocol
+        if "biosensor" in hypothesis_lower and "elisa" in protocol_name:
+            return protocol
+        if "electrochemical" in hypothesis_lower and "electrochemical" in protocol_name:
+            return protocol
+    return None
+
+
 def _build_materials(parsed: ParsedHypothesis, profile: Dict[str, Any], complexity: float) -> List[Dict[str, Any]]:
-    intervention_cost = max(80, int(profile["base_reagents"] * (0.45 + complexity * 0.5)))
-    subject_cost = max(40, int(profile["base_reagents"] * (0.25 + complexity * 0.35)))
+    materials = []
+    
+    # Try to find intervention in knowledge base
+    intervention_kb = _find_reagent_in_kb(parsed.intervention)
+    if intervention_kb:
+        materials.append({
+            "name": intervention_kb["name"],
+            "catalogNumber": intervention_kb["catalogNumber"],
+            "supplier": intervention_kb["supplier"],
+            "quantity": parsed.target_quantity or "Protocol-defined",
+            "unitCostUsd": intervention_kb["unitCostUsd"],
+            "leadTime": "4-10 days",
+            "status": "order",
+            "notes": intervention_kb["notes"],
+            "sourceConfidence": 0.95,
+            "sourceEvidence": f"Catalog match from {intervention_kb['supplier']}"
+        })
+    else:
+        intervention_cost = max(80, int(profile["base_reagents"] * (0.45 + complexity * 0.5)))
+        materials.append({
+            "name": parsed.intervention,
+            "catalogNumber": "TBD",
+            "supplier": "Select validated supplier",
+            "quantity": parsed.target_quantity or "Protocol-defined",
+            "unitCostUsd": intervention_cost,
+            "leadTime": "4-10 days",
+            "status": "order",
+            "notes": "Confirm grade/purity and storage constraints before ordering.",
+            "sourceConfidence": 0.42,
+            "sourceEvidence": "Heuristic from parsed intervention."
+        })
+    
+    # Try to find subject in knowledge base
+    subject_kb = _find_reagent_in_kb(parsed.subject)
+    if subject_kb:
+        materials.append({
+            "name": subject_kb["name"],
+            "catalogNumber": subject_kb["catalogNumber"],
+            "supplier": subject_kb["supplier"],
+            "quantity": "Per protocol",
+            "unitCostUsd": subject_kb["unitCostUsd"],
+            "leadTime": "2-7 days",
+            "status": "in-stock",
+            "notes": subject_kb["notes"],
+            "sourceConfidence": 0.95,
+            "sourceEvidence": f"Catalog match from {subject_kb['supplier']}"
+        })
+    else:
+        subject_cost = max(40, int(profile["base_reagents"] * (0.25 + complexity * 0.35)))
+        materials.append({
+            "name": parsed.subject,
+            "catalogNumber": "N/A",
+            "supplier": "In-house / reference supplier",
+            "quantity": "Per protocol",
+            "unitCostUsd": subject_cost,
+            "leadTime": "2-7 days",
+            "status": "in-stock",
+            "notes": "Validate model/system specification against protocol assumptions.",
+            "sourceConfidence": 0.55,
+            "sourceEvidence": "Derived from parsed subject."
+        })
+    
+    # Consumables
     consumables_cost = max(35, int(profile["base_reagents"] * (0.2 + complexity * 0.25)))
-    return [
-        {"name": parsed.intervention, "catalogNumber": "TBD", "supplier": "Select validated supplier", "quantity": parsed.target_quantity or "Protocol-defined", "unitCostUsd": intervention_cost, "leadTime": "4-10 days", "status": "order", "notes": "Confirm grade/purity and storage constraints before ordering.", "sourceConfidence": 0.42, "sourceEvidence": "Heuristic from parsed intervention."},
-        {"name": parsed.subject, "catalogNumber": "N/A", "supplier": "In-house / reference supplier", "quantity": "Per protocol", "unitCostUsd": subject_cost, "leadTime": "2-7 days", "status": "in-stock", "notes": "Validate model/system specification against protocol assumptions.", "sourceConfidence": 0.55, "sourceEvidence": "Derived from parsed subject."},
-        {"name": "Assay and controls consumables", "catalogNumber": "TBD", "supplier": "Preferred lab vendor", "quantity": "Per run", "unitCostUsd": consumables_cost, "leadTime": "2-5 days", "status": "order", "notes": "Include replicates and QA/QC controls.", "sourceConfidence": 0.48, "sourceEvidence": "Template consumables based on run structure."},
-    ]
+    materials.append({
+        "name": "Assay and controls consumables",
+        "catalogNumber": "TBD",
+        "supplier": "Preferred lab vendor",
+        "quantity": "Per run",
+        "unitCostUsd": consumables_cost,
+        "leadTime": "2-5 days",
+        "status": "order",
+        "notes": "Include replicates and QA/QC controls.",
+        "sourceConfidence": 0.48,
+        "sourceEvidence": "Template consumables based on run structure."
+    })
+    
+    return materials
 
 
 def _build_timeline(profile: Dict[str, Any], complexity: float, citation_confidence: float) -> Tuple[List[Dict[str, Any]], int]:
@@ -151,16 +284,38 @@ def _safe_parse(hypothesis_text: str) -> ParsedHypothesis:
 
 
 def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -> Dict[str, Any]:
+    request_id = uuid.uuid4().hex[:8]
+    t0 = time.perf_counter()
+    _emit_timing(f"[plan:{request_id}] Starting plan generation")
+
+    t_parse_start = time.perf_counter()
     parsed = _safe_parse(hypothesis_text)
+    t_parse_ms = (time.perf_counter() - t_parse_start) * 1000
+    _emit_timing(
+        f"[plan:{request_id}] Parse complete in {t_parse_ms:.1f}ms "
+        f"(domain={getattr(parsed, 'domain', 'unknown')}, subject={getattr(parsed, 'subject', 'unknown')})"
+    )
+
+    t_lit_start = time.perf_counter()
     try:
         literature = check_literature(parsed)
+        lit_error = None
     except Exception as exc:
+        lit_error = str(exc)
         literature = type("LitFallback", (), {
             "novelty_signal": "unavailable", "references": [],
             "search_query_used": f"{parsed.domain} {parsed.subject} {parsed.intervention}",
             "total_results": -1, "error_msg": str(exc),
         })()
+    t_lit_ms = (time.perf_counter() - t_lit_start) * 1000
+    _emit_timing(
+        f"[plan:{request_id}] Literature QC complete in {t_lit_ms:.1f}ms "
+        f"(signal={getattr(literature, 'novelty_signal', 'unknown')}, "
+        f"total_results={getattr(literature, 'total_results', 'unknown')}, "
+        f"error={lit_error or 'none'})"
+    )
 
+    t_assemble_start = time.perf_counter()
     refs = [{"title": r.title, "uri": r.url, "source": f"{r.authors} ({r.year})" if r.year else r.authors} for r in literature.references]
     if not refs:
         refs = [{"title": "No directly matching references found", "uri": "", "source": "OpenAlex search"}]
@@ -188,12 +343,100 @@ def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -
     has_real_refs = bool(getattr(literature, "references", []) and getattr(literature, "total_results", 0) > 0)
     placeholder_materials = sum(1 for m in materials if str(m.get("catalogNumber", "")).upper() in {"TBD", "N/A"})
     material_conf = max(0.2, min(0.95, citation_confidence - 0.12 * (placeholder_materials / max(len(materials), 1))))
-    protocol_conf = max(0.2, min(0.95, citation_confidence - (0.1 if parsed.clarifying_questions else 0.0)))
+    
+    # Try to find matching protocol in knowledge base
+    protocol_kb = _find_protocol_in_kb([parsed.intervention, parsed.subject, parsed.outcome_metric], hypothesis_text)
+    if protocol_kb:
+        protocol_conf = 0.95
+        protocol_source = protocol_kb["source"]
+        protocol_uri = protocol_kb["uri"]
+        protocol_steps = protocol_kb["steps"]
+    else:
+        protocol_conf = max(0.2, min(0.95, citation_confidence - (0.1 if parsed.clarifying_questions else 0.0)))
+        protocol_source = "Protocol heuristic"
+        protocol_uri = ""
+        protocol_steps = []
+    
     timeline_conf = max(0.25, min(0.95, 0.55 + (0.4 - complexity * 0.25)))
     validation_conf = max(0.25, min(0.95, 0.5 + (0.35 if not parsed.clarifying_questions else -0.15)))
 
     plan_id = f"exp-{uuid.uuid4().hex[:8]}"
-    return {
+    
+    # Build steps from protocol if available, otherwise use heuristic
+    if protocol_steps:
+        steps = []
+        for i, step_text in enumerate(protocol_steps, 1):
+            steps.append({
+                "id": f"s{i}",
+                "title": f"Protocol step {i}",
+                "detail": step_text,
+                "quantity": "Protocol-defined",
+                "duration": f"Day {i}-{i+1}",
+                "source": protocol_source,
+                "sourceConfidence": 0.95,
+                "sourceEvidence": f"Protocol from {protocol_source}: {protocol_uri}",
+                "riskLevel": "low",
+                "riskNote": "Validated protocol from peer-reviewed source.",
+                "validationChecks": ["Follow protocol exactly", "Document any deviations"],
+                "decisionGate": "Proceed if step completed successfully.",
+            })
+    else:
+        steps = [
+            {
+                "id": "s1", "title": "Prepare control and treatment groups",
+                "detail": f"Set up baseline control ({parsed.control_condition or 'standard condition'}) and treatment with {parsed.intervention}.",
+                "quantity": parsed.target_quantity or "Protocol-defined",
+                "duration": f"Day 1-{max(2, int(total_days * 0.3))}",
+                "source": "Protocol heuristic", "sourceConfidence": round(protocol_conf - 0.08, 3),
+                "sourceEvidence": "No protocol repository mapping found for exact setup/control pair.",
+                "riskLevel": "med", "riskNote": "Unclear dosing or setup can bias downstream outcomes.",
+                "validationChecks": ["Randomization documented", "Control condition matches baseline claim"],
+                "decisionGate": "Proceed only if baseline variance is acceptable.",
+            },
+            {
+                "id": "s2", "title": "Apply intervention and monitor",
+                "detail": f"Apply {parsed.intervention} under declared constraints: {', '.join(parsed.environmental_constraints) if parsed.environmental_constraints else 'standard conditions'}.",
+                "quantity": parsed.target_quantity or "Protocol-defined",
+                "duration": f"Day {max(2, int(total_days * 0.3))}-{max(4, int(total_days * 0.75))}",
+                "source": "Parsed hypothesis", "sourceConfidence": round(protocol_conf, 3),
+                "sourceEvidence": "Anchored to parsed intervention and constraints.",
+                "riskLevel": "med", "riskNote": "Environmental drift may reduce reproducibility.",
+                "validationChecks": ["Temperature/log checks", "Intervention timing recorded"],
+                "decisionGate": "Repeat run if intervention deviations exceed threshold.",
+            },
+            {
+                "id": "s3", "title": "Measure primary outcome",
+                "detail": f"Quantify outcome metric: {parsed.outcome_metric}.",
+                "quantity": "n>=4 replicates",
+                "duration": f"Day {max(4, int(total_days * 0.75))}-{total_days}",
+                "source": "Hypothesis metric", "sourceConfidence": round(protocol_conf + 0.05, 3),
+                "sourceEvidence": "Outcome metric sourced from parsed hypothesis statement.",
+                "riskLevel": "low",
+                "validationChecks": ["Predefine statistical test", "Include confidence intervals"],
+                "decisionGate": "Go only if effect size and uncertainty meet criteria.",
+            },
+        ]
+    
+    evidence_sources = list(refs)
+    if protocol_uri:
+        evidence_sources.append({
+            "title": "Matched protocol template",
+            "uri": protocol_uri,
+            "source": protocol_source,
+        })
+    elif protocol_source:
+        evidence_sources.append({
+            "title": "Protocol generation fallback",
+            "uri": "",
+            "source": "Protocol heuristic (no exact repository match)",
+        })
+    evidence_sources.append({
+        "title": "Hypothesis parse extraction",
+        "uri": "",
+        "source": "Vertex/Groq parser from user input",
+    })
+
+    response = {
         "experiment": {
             "id": plan_id, "project": "Agentic Labmate", "hypothesis": hypothesis_text,
             "originalInput": getattr(parsed, "original_input", hypothesis_text),
@@ -210,41 +453,7 @@ def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -
                 "timeline": round(timeline_conf, 3), "validation": round(validation_conf, 3),
             },
             "materials": materials,
-            "steps": [
-                {
-                    "id": "s1", "title": "Prepare control and treatment groups",
-                    "detail": f"Set up baseline control ({parsed.control_condition or 'standard condition'}) and treatment with {parsed.intervention}.",
-                    "quantity": parsed.target_quantity or "Protocol-defined",
-                    "duration": f"Day 1-{max(2, int(total_days * 0.3))}",
-                    "source": "Protocol heuristic", "sourceConfidence": round(protocol_conf - 0.08, 3),
-                    "sourceEvidence": "No protocol repository mapping found for exact setup/control pair.",
-                    "riskLevel": "med", "riskNote": "Unclear dosing or setup can bias downstream outcomes.",
-                    "validationChecks": ["Randomization documented", "Control condition matches baseline claim"],
-                    "decisionGate": "Proceed only if baseline variance is acceptable.",
-                },
-                {
-                    "id": "s2", "title": "Apply intervention and monitor",
-                    "detail": f"Apply {parsed.intervention} under declared constraints: {', '.join(parsed.environmental_constraints) if parsed.environmental_constraints else 'standard conditions'}.",
-                    "quantity": parsed.target_quantity or "Protocol-defined",
-                    "duration": f"Day {max(2, int(total_days * 0.3))}-{max(4, int(total_days * 0.75))}",
-                    "source": "Parsed hypothesis", "sourceConfidence": round(protocol_conf, 3),
-                    "sourceEvidence": "Anchored to parsed intervention and constraints.",
-                    "riskLevel": "med", "riskNote": "Environmental drift may reduce reproducibility.",
-                    "validationChecks": ["Temperature/log checks", "Intervention timing recorded"],
-                    "decisionGate": "Repeat run if intervention deviations exceed threshold.",
-                },
-                {
-                    "id": "s3", "title": "Measure primary outcome",
-                    "detail": f"Quantify outcome metric: {parsed.outcome_metric}.",
-                    "quantity": f"n>={3 + int(round(complexity * 2))} replicates",
-                    "duration": f"Day {max(4, int(total_days * 0.75))}-{total_days}",
-                    "source": "Hypothesis metric", "sourceConfidence": round(protocol_conf + 0.05, 3),
-                    "sourceEvidence": "Outcome metric sourced from parsed hypothesis statement.",
-                    "riskLevel": "low",
-                    "validationChecks": ["Predefine statistical test", "Include confidence intervals"],
-                    "decisionGate": "Go only if effect size and uncertainty meet criteria.",
-                },
-            ],
+            "steps": steps,
             "timeline": timeline, "budget": budget, "benchmark": benchmark,
             "validation": {
                 "primaryMetric": parsed.outcome_metric,
@@ -253,6 +462,10 @@ def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -
                 "decisionGates": ["Control quality pass", "Intervention consistency pass", "Outcome confidence pass"],
             },
             "reviewAdaptations": review_adaptations,
-            "sources": refs,
+            "sources": evidence_sources,
         }
     }
+    t_assemble_ms = (time.perf_counter() - t_assemble_start) * 1000
+    t_total_ms = (time.perf_counter() - t0) * 1000
+    _emit_timing(f"[plan:{request_id}] Plan assembled in {t_assemble_ms:.1f}ms; total={t_total_ms:.1f}ms")
+    return response
