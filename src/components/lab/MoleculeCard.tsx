@@ -450,48 +450,14 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
             </div>
           </div>
         </div>
-        <p className="text-[11px] text-muted-foreground mb-3">
-          Sketch canvas for exploring mechanistic hypotheses. Drag atoms to test alternate arrangements. This is a planning tool — not a structural database record.
+        <p className="text-[11px] text-muted-foreground mb-2">
+          Drag atoms · planning tool only — not a structural database record.
         </p>
 
-        {/* Canvas controls */}
-        <div className="mb-2 grid gap-2 sm:grid-cols-3">
-          <label className="rounded-xl border border-border bg-panel px-3 py-2 text-[11px]">
-            <div className="mb-1 text-muted-foreground">Rotation</div>
-            <input type="range" min="-180" max="180" value={rotation} onChange={(event) => setRotation(Number(event.target.value))} className="w-full accent-primary" />
-          </label>
-          <label className="rounded-xl border border-border bg-panel px-3 py-2 text-[11px]">
-            <div className="mb-1 text-muted-foreground">Spread</div>
-            <input type="range" min="12" max="26" value={spread} onChange={(event) => setSpread(Number(event.target.value))} className="w-full accent-primary" />
-          </label>
-          <div className="flex items-center justify-end gap-2 rounded-xl border border-border bg-panel px-3 py-2">
-            <button
-              type="button"
-              onClick={addAtom}
-              className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-            >
-              <Plus className="size-3" />
-              Atom
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setModel(presets[presetIndex] || presets[0]);
-                setRotation(18);
-                setSpread(18);
-              }}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 transition-colors"
-            >
-              <RotateCw className="size-3" />
-              Reset
-            </button>
-          </div>
-        </div>
-
-        {/* Atom canvas */}
+        {/* Atom canvas — controls moved below to prevent overlap */}
         <div
           ref={canvasRef}
-          className="relative h-64 overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),rgba(224,234,248,0.88))]"
+          className="relative h-56 overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),rgba(224,234,248,0.88))]"
         >
           <div className="absolute inset-0 bg-[linear-gradient(transparent_95%,rgba(100,120,150,0.07)_95%),linear-gradient(90deg,transparent_95%,rgba(100,120,150,0.07)_95%)] bg-[size:28px_28px]" />
           <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -567,6 +533,36 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
               </div>
             ) : null;
           })()}
+        </div>
+      </div>
+
+      {/* ── Canvas controls — below canvas to prevent any overlap ── */}
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        <label className="flex items-center gap-2 text-[11px] text-muted-foreground flex-1 min-w-[120px]">
+          <span className="shrink-0 w-14">Rotation</span>
+          <input type="range" min="-180" max="180" value={rotation} onChange={(event) => setRotation(Number(event.target.value))} className="w-full accent-primary" />
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-muted-foreground flex-1 min-w-[120px]">
+          <span className="shrink-0 w-10">Spread</span>
+          <input type="range" min="12" max="26" value={spread} onChange={(event) => setSpread(Number(event.target.value))} className="w-full accent-primary" />
+        </label>
+        <div className="flex gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={addAtom}
+            className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <Plus className="size-3" />
+            Atom
+          </button>
+          <button
+            type="button"
+            onClick={() => { setModel(presets[presetIndex] || presets[0]); setRotation(18); setSpread(18); }}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 transition-colors"
+          >
+            <RotateCw className="size-3" />
+            Reset
+          </button>
         </div>
       </div>
 

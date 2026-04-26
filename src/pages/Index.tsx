@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Beaker, ChevronRight, Leaf, Loader2, Menu, PanelRightOpen, Plus, ShieldCheck, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { Beaker, DollarSign, Leaf, Loader2, Menu, PanelRightOpen, Plus, ShieldCheck, Sparkles, TestTube2, Timer, Trash2, Wand2, X } from "lucide-react";
 import { Navigator, type AgentLogItem, type ProjectListItem } from "@/components/lab/Navigator";
 import { ContextStore } from "@/components/lab/ContextStore";
 import { ProtocolCard } from "@/components/lab/ProtocolCard";
@@ -27,11 +27,14 @@ const PROJECTS_STORAGE_KEY = "agentic-labmate-projects";
 const ACTIVE_PROJECT_STORAGE_KEY = "agentic-labmate-active-project";
 const BUDGET_REGION_STORAGE_KEY = "agentic-labmate-budget-region";
 
-const toneMap: Record<string, string> = {
-  primary: "bg-primary-soft text-primary border-primary/30",
-  accent: "bg-accent-soft text-accent-foreground border-accent/30",
-  success: "bg-success-soft text-success border-success/30",
-};
+type MainTab = "protocol" | "budget" | "timeline" | "validation";
+
+const TAB_CONFIG: { id: MainTab; label: string; icon: React.ReactNode }[] = [
+  { id: "protocol",   label: "Protocol",         icon: <TestTube2 className="size-3.5" /> },
+  { id: "budget",     label: "Budget & Compare",  icon: <DollarSign className="size-3.5" /> },
+  { id: "timeline",   label: "Timeline",          icon: <Timer className="size-3.5" /> },
+  { id: "validation", label: "Validation",        icon: <ShieldCheck className="size-3.5" /> },
+];
 
 function formatProjectTime(dateString: string) {
   const date = new Date(dateString);
@@ -57,17 +60,6 @@ function buildGenerationLogs(projectName: string): AgentLogItem[] {
   ];
 }
 
-function Metric({ label, value, tone, icon }: { label: string; value: string; tone: string; icon: React.ReactNode }) {
-  return (
-    <div className={`rounded-2xl border px-3 py-3 ${toneMap[tone]}`}>
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider opacity-80">
-        {icon} {label}
-      </div>
-      <div className="mt-1 text-lg font-bold leading-tight">{value}</div>
-    </div>
-  );
-}
-
 const Index = () => {
   const [projects, setProjects] = useState<LabProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -77,6 +69,7 @@ const Index = () => {
   const [composerOpen, setComposerOpen] = useState(true);
   const [draftName, setDraftName] = useState("");
   const [draftHypothesis, setDraftHypothesis] = useState("");
+  const [activeTab, setActiveTab] = useState<MainTab>("protocol");
   const [budgetRegion, setBudgetRegion] = useState<BudgetRegion>(budgetRegionByCode("DE"));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -337,7 +330,10 @@ const Index = () => {
   const workspaceEmpty = !activeProject;
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface)))] flex relative overflow-hidden">
+    <div className="min-h-screen bg-background flex relative overflow-hidden">
+
+      {/* ── Subtle background gradient ── */}
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,_hsl(var(--primary-soft))_0%,_transparent_40%),radial-gradient(ellipse_at_bottom_right,_hsl(var(--accent-soft))_0%,_transparent_40%)] opacity-60" />
 
       {/* ── Mobile nav backdrop ── */}
       {navOpen && (
@@ -360,7 +356,7 @@ const Index = () => {
       </div>
 
       <main className="flex-1 flex min-w-0 flex-col overflow-hidden">
-        <header className="border-b border-border bg-panel/90 px-4 py-3 backdrop-blur sm:px-6 sm:py-4">
+        <header className="border-b border-border bg-panel/95 px-4 py-3 backdrop-blur-sm sm:px-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               {/* Hamburger — visible below lg */}
@@ -373,10 +369,12 @@ const Index = () => {
                 <Menu className="size-4" />
               </button>
               <div className="min-w-0">
-                <div className="truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  {activeProject ? `${activeProject.name} · ${activeProject.domain || "Custom workflow"}` : "Create an experiment project"}
+                <div className="truncate text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-medium">
+                  {activeProject ? `${activeProject.domain || "Custom"} · ${activeProject.name}` : "Scientific Planning Workbench"}
                 </div>
-                <h1 className="text-lg font-semibold tracking-tight sm:text-2xl">Scientific Planning Workbench</h1>
+                <h1 className="text-base font-bold tracking-tight text-foreground sm:text-lg">
+                  <span className="text-primary">Agentic</span> Lab<span className="text-accent">Mate</span>
+                </h1>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -490,128 +488,164 @@ const Index = () => {
 
             {activeProject && (
               <>
-                <section className="rounded-[28px] border border-border bg-[radial-gradient(circle_at_top_right,_hsl(var(--primary-soft)),_transparent_30%),linear-gradient(180deg,hsl(var(--panel)),hsl(var(--panel)))] p-6 shadow-sm">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
-                          {activeProject.domain || "Active project"}
-                        </span>
-                        <span className="rounded-full border border-border bg-panel px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                          Updated {formatProjectTime(activeProject.updatedAt)}
-                        </span>
-                        {activeProject.novelty && (
-                          <span className="rounded-full border border-accent/20 bg-accent-soft px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-accent-foreground">
-                            {activeProject.novelty}
+                {/* ── Project header bar ── */}
+                <section className="rounded-2xl border border-border bg-panel shadow-sm overflow-hidden">
+                  <div className="flex flex-col gap-0">
+                    {/* Top row: identity + metrics */}
+                    <div className="flex flex-col gap-3 px-5 pt-5 pb-4 lg:flex-row lg:items-center lg:justify-between bg-[radial-gradient(ellipse_at_top_right,_hsl(var(--primary-soft)),_transparent_50%)]">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="rounded-full border border-primary/25 bg-primary px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-primary-foreground">
+                            {activeProject.domain || "Custom"}
                           </span>
+                          {activeProject.novelty && (
+                            <span className="rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-[10px] font-medium text-accent-foreground">
+                              ✦ {activeProject.novelty}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">
+                            Updated {formatProjectTime(activeProject.updatedAt)}
+                          </span>
+                        </div>
+                        <h2 className="text-lg font-bold leading-tight tracking-tight">{activeProject.name}</h2>
+                        {activePlan?.plainEnglish && (
+                          <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-2xl line-clamp-2">
+                            {activePlan.plainEnglish}
+                          </p>
                         )}
                       </div>
-                      <h2 className="max-w-4xl text-xl font-semibold leading-tight">{activeProject.name}</h2>
-                      <p className="mt-2 max-w-4xl text-sm leading-relaxed text-muted-foreground">
-                        {activePlan?.plainEnglish || "Use the hypothesis editor below to generate the first operational plan."}
-                      </p>
+                      {activePlan && (
+                        <div className="flex gap-2 shrink-0">
+                          {[
+                            { label: "Confidence", value: activePlan.metrics.confidence, icon: <ShieldCheck className="size-3" />, cls: "border-primary/20 bg-primary-soft text-primary" },
+                            { label: "Novelty",    value: activePlan.metrics.novelty,    icon: <Sparkles className="size-3" />,    cls: "border-accent/20 bg-accent-soft text-accent-foreground" },
+                            { label: "Sustain.",   value: activePlan.metrics.sustainability, icon: <Leaf className="size-3" />,    cls: "border-success/20 bg-success-soft text-success" },
+                          ].map(({ label, value, icon, cls }) => (
+                            <div key={label} className={`flex flex-col items-center rounded-xl border px-3 py-2 text-center ${cls}`}>
+                              <div className="flex items-center gap-1 text-[9px] uppercase tracking-wide opacity-70 mb-0.5">{icon}{label}</div>
+                              <div className="text-sm font-bold leading-tight">{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
+                    {/* Stats strip */}
                     {activePlan && (
-                      <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:w-[340px]">
-                        <Metric label="Confidence" value={activePlan.metrics.confidence} tone="primary" icon={<ShieldCheck className="size-3.5" />} />
-                        <Metric label="Novelty" value={activePlan.metrics.novelty} tone="accent" icon={<Sparkles className="size-3.5" />} />
-                        <Metric label="Sustainability" value={activePlan.metrics.sustainability} tone="success" icon={<Leaf className="size-3.5" />} />
+                      <div className="grid grid-cols-4 divide-x divide-border border-t border-border text-center">
+                        {[
+                          { label: "Steps",    value: String(activePlan.steps.length) },
+                          { label: "Materials", value: String(activePlan.materials.length) },
+                          { label: "Gates",     value: String(activePlan.validation.decisionGates.length) },
+                          { label: "Reviews",   value: String(activeReviews.length) },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="py-2.5 px-2">
+                            <div className="text-base font-bold text-foreground">{value}</div>
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</div>
+                          </div>
+                        ))}
                       </div>
                     )}
-                  </div>
 
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
-                    <textarea
-                      value={activeProject.hypothesis}
-                      onChange={(event) =>
-                        updateProject(activeProject.id, (project) => ({
-                          ...project,
-                          hypothesis: event.target.value,
-                        }))
-                      }
-                      className="min-h-28 rounded-2xl border border-border bg-panel px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                    <div className="flex flex-wrap gap-2 lg:flex-col">
-                      <button
-                        type="button"
-                        onClick={() => void generateForProject(activeProject.id, activeProject.hypothesis)}
-                        disabled={loading}
-                        className="rounded-2xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-sm disabled:opacity-60"
-                      >
-                        {loading ? "Generating..." : "Run Planning Agent"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetDraftProject();
-                          setComposerOpen(true);
-                        }}
-                        className="rounded-2xl border border-border bg-panel px-4 py-3 text-sm font-medium hover:bg-muted"
-                      >
-                        New Project
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProject(activeProject.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm font-medium text-danger hover:bg-danger hover:text-white"
-                      >
-                        <Trash2 className="size-4" />
-                        Delete Project
-                      </button>
+                    {/* Hypothesis editor + actions */}
+                    <div className="border-t border-border px-5 py-4 bg-muted/20">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:gap-3">
+                        <textarea
+                          value={activeProject.hypothesis}
+                          onChange={(event) =>
+                            updateProject(activeProject.id, (project) => ({
+                              ...project,
+                              hypothesis: event.target.value,
+                            }))
+                          }
+                          rows={2}
+                          className="flex-1 rounded-xl border border-border bg-panel px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                          placeholder="Scientific hypothesis…"
+                        />
+                        <div className="flex gap-2 lg:flex-col lg:w-36">
+                          <button
+                            type="button"
+                            onClick={() => void generateForProject(activeProject.id, activeProject.hypothesis)}
+                            disabled={loading}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground shadow-sm disabled:opacity-60"
+                          >
+                            {loading ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />}
+                            {loading ? "Running…" : "Run Agent"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { resetDraftProject(); setComposerOpen(true); }}
+                            className="rounded-xl border border-border bg-panel px-3 py-2 text-xs font-medium hover:bg-muted"
+                          >
+                            New
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProject(activeProject.id)}
+                            className="inline-flex items-center justify-center rounded-xl border border-danger/20 bg-danger-soft px-3 py-2 text-xs font-medium text-danger hover:bg-danger hover:text-white"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </section>
-
-                <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-                    <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Novelty</div>
-                    <div className="text-sm font-medium">{activePlan?.novelty.signal || "Waiting"}</div>
-                    <div className="mt-2 text-xs text-muted-foreground">Fast QC before the lab commits budget.</div>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-                    <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Materials</div>
-                    <div className="text-sm font-medium">{activePlan?.materials.length ?? 0} critical items</div>
-                    <div className="mt-2 text-xs text-muted-foreground">Catalog-ready and procurement-aware.</div>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-                    <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Validation</div>
-                    <div className="text-sm font-medium">{activePlan?.validation.decisionGates.length ?? 0} gates</div>
-                    <div className="mt-2 text-xs text-muted-foreground">Clear stop/go decisions for scientists.</div>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-                    <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Review memory</div>
-                    <div className="text-sm font-medium">{activeReviews.length} scientist notes</div>
-                    <div className="mt-2 text-xs text-muted-foreground">Used to improve the next regeneration.</div>
                   </div>
                 </section>
               </>
             )}
 
             {loading && (
-              <section className="rounded-2xl border border-border bg-panel p-5 shadow-sm">
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  The planning agent is working through retrieval, novelty QC, and operational assembly.
+              <section className="rounded-xl border border-border bg-panel p-4 shadow-sm">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  Planning agent is running retrieval, novelty QC and operational assembly…
                 </div>
               </section>
             )}
 
             {error && (
-              <section className="rounded-2xl border border-danger/20 bg-danger-soft/30 p-4 text-sm text-danger shadow-sm">
+              <section className="rounded-xl border border-danger/20 bg-danger-soft/30 p-4 text-xs text-danger shadow-sm">
                 {error}
               </section>
             )}
 
             {activePlan && (
               <>
-                <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
-                <ValidationCard validation={activePlan.validation} />
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <SupplyChainCard plan={activePlan} budgetRegion={budgetRegion} />
-                  <TimelineCard phases={activePlan.timeline} />
+                {/* ── Tab bar ── */}
+                <div className="flex gap-1 rounded-2xl border border-border bg-panel p-1.5 shadow-sm">
+                  {TAB_CONFIG.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-semibold transition-all ${
+                        activeTab === tab.id
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                    >
+                      {tab.icon}
+                      <span className="hidden sm:inline">{tab.label}</span>
+                    </button>
+                  ))}
                 </div>
-                <ComparisonCard rows={activePlan.benchmark} budgetRegion={budgetRegion} />
+
+                {/* ── Tab panels ── */}
+                {activeTab === "protocol" && (
+                  <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
+                )}
+                {activeTab === "budget" && (
+                  <div className="space-y-4">
+                    <SupplyChainCard plan={activePlan} budgetRegion={budgetRegion} />
+                    <ComparisonCard rows={activePlan.benchmark} budgetRegion={budgetRegion} />
+                  </div>
+                )}
+                {activeTab === "timeline" && (
+                  <TimelineCard phases={activePlan.timeline} />
+                )}
+                {activeTab === "validation" && (
+                  <ValidationCard validation={activePlan.validation} />
+                )}
               </>
             )}
 

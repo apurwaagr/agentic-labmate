@@ -64,51 +64,46 @@ export function ValidationCard({ validation }: { validation: ValidationPlan }) {
       </header>
 
       <div className="p-5 space-y-4">
-        {/* Primary metric — hero card */}
-        <div className="rounded-xl border-2 border-success/25 bg-success-soft/40 p-4">
-          <div className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-success">
-            <CheckCircle2 className="size-3.5" />
-            Primary success metric
+        {/* Primary metric — hero */}
+        <div className="rounded-xl border-2 border-success/25 bg-success-soft/40 p-3 flex items-start gap-3">
+          <CheckCircle2 className="size-4 shrink-0 text-success mt-0.5" />
+          <div>
+            <div className="text-xs font-bold text-foreground">{validation.primaryMetric}</div>
+            <div className="mt-0.5 text-[11px] text-foreground/70 leading-snug">{validation.successCriteria}</div>
           </div>
-          <div className="text-sm font-semibold text-foreground">{validation.primaryMetric}</div>
-          <p className="mt-2 text-xs leading-relaxed text-foreground/75">{validation.successCriteria}</p>
         </div>
 
-        {/* Decision gates — traffic light */}
+        {/* Gates — compact chip list */}
         <div>
-          <div className="mb-2.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            <ShieldCheck className="size-3.5 text-primary" />
-            Decision gates
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheck className="size-3 text-primary" />Decision gates
           </div>
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {validation.decisionGates.map((gate) => {
               const status = gateStatus(gate);
               const style = gateStyle[status];
               return (
-                <li key={gate} className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3">
-                  {/* Traffic-light indicator */}
-                  <span className={`mt-0.5 flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-wide ${style.badge}`}>
-                    <span className={`size-1.5 rounded-full ${style.dot}`} />
+                <li key={gate} className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <span className={`mt-0.5 shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${style.badge}`}>
                     {style.label}
                   </span>
-                  <p className="text-xs leading-relaxed text-foreground/85">{gate}</p>
+                  <span className="text-[11px] leading-snug text-foreground/85">{gate}</span>
                 </li>
               );
             })}
           </ul>
         </div>
 
-        {/* Failure criteria */}
-        <div className="rounded-xl border border-danger/20 bg-danger-soft/30 p-4">
-          <div className="mb-2.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-danger">
-            <XCircle className="size-3.5" />
-            Failure / abort criteria
+        {/* Failure criteria — compact chips */}
+        <div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-danger flex items-center gap-1.5">
+            <XCircle className="size-3" />Failure / abort criteria
           </div>
-          <ul className="space-y-2">
+          <ul className="flex flex-col gap-1">
             {validation.failureCriteria.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-xs leading-relaxed text-foreground/80">
-                <XCircle className="size-3 mt-0.5 shrink-0 text-danger/70" />
-                {item}
+              <li key={item} className="flex items-start gap-2 rounded-lg border border-danger/15 bg-danger-soft/20 px-3 py-1.5">
+                <XCircle className="size-3 mt-0.5 shrink-0 text-danger/60" />
+                <span className="text-[11px] leading-snug text-foreground/80">{item}</span>
               </li>
             ))}
           </ul>

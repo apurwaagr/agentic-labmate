@@ -147,53 +147,36 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                 </button>
 
                 {isOpen && (
-                  <div className="border-t border-border bg-panel px-4 py-4">
-                    <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-                      {/* Left: detail + validation checks */}
-                      <div className="space-y-3">
-                        <div>
-                          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Procedure</div>
-                          <p className="text-sm leading-relaxed text-foreground/85">{step.detail}</p>
-                        </div>
-                        {step.validationChecks.length > 0 && (
-                          <div className="rounded-xl border border-success/20 bg-success-soft/40 p-3">
-                            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-success">
-                              <CheckCircle2 className="size-3.5" />
-                              Validation checks
-                            </div>
-                            <ul className="space-y-1.5">
-                              {step.validationChecks.map((check) => (
-                                <li key={check} className="flex items-start gap-2 text-xs leading-relaxed text-foreground/80">
-                                  <CheckCircle2 className="size-3 mt-0.5 shrink-0 text-success" />
-                                  {check}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
+                  <div className="border-t border-border bg-panel/60 px-4 py-3 space-y-2">
+                    {/* Procedure — compact prose */}
+                    <p className="text-xs leading-relaxed text-foreground/80">{step.detail}</p>
 
-                      {/* Right: risk note + decision gate */}
-                      <div className="space-y-3">
-                        {step.riskLevel && step.riskNote && (
-                          <div className={`rounded-xl border p-3 text-xs leading-relaxed ${riskColor[step.riskLevel]}`}>
-                            <div className="mb-1.5 flex items-center gap-1.5 font-semibold">
-                              {riskIcon[step.riskLevel]}
-                              Operational risk
-                            </div>
-                            {step.riskNote}
-                          </div>
-                        )}
-                        {step.decisionGate && (
-                          <div className="rounded-xl border-2 border-primary/30 bg-primary-soft p-3 text-xs leading-relaxed">
-                            <div className="mb-1.5 flex items-center gap-1.5 font-semibold text-primary">
-                              <ShieldCheck className="size-3.5" />
-                              Go / No-Go gate
-                            </div>
-                            <p className="text-foreground/80">{step.decisionGate}</p>
-                          </div>
-                        )}
+                    {/* Validation checks as tightly-spaced bullets */}
+                    {step.validationChecks.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {step.validationChecks.map((check) => (
+                          <span key={check} className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success-soft px-2 py-0.5 text-[10px] text-success">
+                            <CheckCircle2 className="size-2.5 shrink-0" />
+                            {check}
+                          </span>
+                        ))}
                       </div>
+                    )}
+
+                    {/* Risk + gate inline */}
+                    <div className="flex flex-wrap gap-2">
+                      {step.riskLevel && step.riskNote && (
+                        <div className={`flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug flex-1 min-w-0 ${riskColor[step.riskLevel]}`}>
+                          <span className="shrink-0 mt-0.5">{riskIcon[step.riskLevel]}</span>
+                          <span>{step.riskNote}</span>
+                        </div>
+                      )}
+                      {step.decisionGate && (
+                        <div className="flex items-start gap-1.5 rounded-lg border-2 border-primary/30 bg-primary-soft px-2.5 py-1.5 text-[11px] leading-snug flex-1 min-w-0">
+                          <ShieldCheck className="size-3 shrink-0 mt-0.5 text-primary" />
+                          <span className="text-foreground/80">{step.decisionGate}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

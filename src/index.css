@@ -8,49 +8,49 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Lab-grade Scientific Clarity palette — optimised for long reading sessions */
-    --background: 210 22% 98%;
-    --foreground: 220 28% 9%;
+    /* Hackathon-grade Scientific palette — vivid, high-contrast, WOW-factor */
+    --background: 218 30% 97%;
+    --foreground: 222 32% 7%;
 
-    --surface: 210 18% 96%;
+    --surface: 216 24% 94%;
     --panel: 0 0% 100%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 28% 9%;
+    --card-foreground: 222 32% 7%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 28% 9%;
+    --popover-foreground: 222 32% 7%;
 
-    /* Brand: deep science navy — confident, journal-quality */
-    --primary: 219 62% 28%;
+    /* Brand: science indigo — deep, authoritative */
+    --primary: 234 72% 34%;
     --primary-foreground: 0 0% 100%;
-    --primary-soft: 220 55% 95%;
-    --primary-dark: 219 62% 20%;
+    --primary-soft: 232 75% 95%;
+    --primary-dark: 234 72% 22%;
 
-    --secondary: 215 18% 93%;
-    --secondary-foreground: 220 28% 18%;
+    --secondary: 216 22% 90%;
+    --secondary-foreground: 222 28% 18%;
 
-    --muted: 215 18% 95%;
-    --muted-foreground: 215 14% 38%;
+    --muted: 216 22% 93%;
+    --muted-foreground: 216 17% 42%;
 
-    /* Accent: scientific amber — warm contrast against navy */
-    --accent: 40 82% 48%;
-    --accent-foreground: 220 28% 9%;
-    --accent-soft: 42 88% 94%;
+    /* Accent: vivid teal — discovery, innovation */
+    --accent: 178 72% 34%;
+    --accent-foreground: 0 0% 100%;
+    --accent-soft: 178 62% 92%;
 
-    --success: 150 58% 30%;
-    --success-soft: 150 50% 94%;
-    --warning: 30 88% 46%;
-    --warning-soft: 30 92% 94%;
-    --danger: 355 68% 46%;
-    --danger-soft: 355 72% 96%;
+    --success: 154 62% 26%;
+    --success-soft: 154 55% 92%;
+    --warning: 34 94% 42%;
+    --warning-soft: 34 96% 92%;
+    --danger: 350 72% 42%;
+    --danger-soft: 350 72% 95%;
 
-    --destructive: 355 68% 46%;
+    --destructive: 350 72% 42%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 215 22% 88%;
-    --input: 215 22% 88%;
-    --ring: 219 62% 28%;
+    --border: 218 26% 85%;
+    --input: 218 26% 85%;
+    --ring: 234 72% 34%;
 
     --radius: 0.5rem;
 
@@ -116,11 +116,11 @@ All colors MUST be HSL.
   }
 
   body {
-    font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-    background:
-      radial-gradient(circle at top left, hsl(var(--primary-soft)) 0%, transparent 28%),
-      linear-gradient(180deg, hsl(var(--background)), hsl(var(--surface)));
+    font-family: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, sans-serif;
+    background: hsl(var(--background));
     @apply bg-background text-foreground antialiased;
+    font-size: 14px;
+    line-height: 1.6;
     font-feature-settings: "cv01", "cv02", "cv03", "cv06", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

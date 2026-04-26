@@ -23,65 +23,48 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
         </div>
       </header>
 
-      <div className="grid gap-3 p-4">
-        {plan.materials.map((item) => (
-          <article key={`${item.catalogNumber}-${item.name}`} className="rounded-2xl border border-border bg-muted/20 p-4">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-sm font-semibold">{item.name}</h4>
-                  <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusBadge[item.status]}`}>
-                    {item.status === "owned" && <Check className="size-2.5" />}
-                    {item.status.replace("-", " ")}
+      {/* Compact table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border bg-muted/30 text-left">
+              <th className="px-4 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Reagent</th>
+              <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Supplier · Cat#</th>
+              <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Qty</th>
+              <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Lead</th>
+              <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground text-right">Unit</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {plan.materials.map((item) => (
+              <tr key={`${item.catalogNumber}-${item.name}`} className="hover:bg-muted/20 transition-colors">
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">{item.name}</span>
+                    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${statusBadge[item.status]}`}>
+                      {item.status === "owned" && <Check className="size-2" />}
+                      {item.status.replace("-", " ")}
+                    </span>
+                  </div>
+                  {item.notes && <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{item.notes}</div>}
+                </td>
+                <td className="px-3 py-2.5 text-muted-foreground">
+                  <div>{item.supplier}</div>
+                  <div className="font-mono text-[10px]">{item.catalogNumber}</div>
+                </td>
+                <td className="px-3 py-2.5 text-foreground/80">{item.quantity}</td>
+                <td className="px-3 py-2.5">
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Truck className="size-2.5" />{item.leadTime}
                   </span>
-                </div>
-                <div className="mt-2 grid gap-2 text-xs text-foreground/80 xl:grid-cols-2">
-                  <div className="rounded-xl bg-panel px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Supplier</div>
-                    <div className="mt-1 font-medium">{item.supplier}</div>
-                  </div>
-                  <div className="rounded-xl bg-panel px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Catalog number</div>
-                    <div className="mt-1 font-mono text-[11px]">{item.catalogNumber}</div>
-                  </div>
-                  <div className="rounded-xl bg-panel px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Quantity</div>
-                    <div className="mt-1 font-medium">{item.quantity}</div>
-                  </div>
-                  <div className="rounded-xl bg-panel px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Lead time</div>
-                    <div className="mt-1 inline-flex items-center gap-1 font-medium">
-                      <Truck className="size-3" />
-                      {item.leadTime}
-                    </div>
-                  </div>
-                </div>
-                {item.notes && <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{item.notes}</p>}
-                {(item.molecularFormula || item.pubchemCid || item.iupacName) && (
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                    {item.molecularFormula && <span className="rounded-full bg-panel px-2 py-1">Formula {item.molecularFormula}</span>}
-                    {typeof item.molecularWeight === "number" && <span className="rounded-full bg-panel px-2 py-1">MW {item.molecularWeight.toFixed(2)}</span>}
-                    {item.pubchemCid && (
-                      <a
-                        href={item.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${item.pubchemCid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-full bg-panel px-2 py-1 hover:text-foreground"
-                      >
-                        PubChem CID {item.pubchemCid}
-                      </a>
-                    )}
-                    {item.iupacName && <span className="rounded-full bg-panel px-2 py-1">{item.iupacName}</span>}
-                  </div>
-                )}
-              </div>
-              <div className="rounded-2xl border border-border bg-panel px-4 py-3 text-center xl:w-28">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Unit cost</div>
-                <div className="mt-1 text-lg font-semibold">{formatCurrency(adjustedBudgetAmount(item.unitCostUsd, budgetRegion, "reagents"), budgetRegion)}</div>
-              </div>
-            </div>
-          </article>
-        ))}
+                </td>
+                <td className="px-3 py-2.5 text-right font-semibold text-foreground">
+                  {formatCurrency(adjustedBudgetAmount(item.unitCostUsd, budgetRegion, "reagents"), budgetRegion)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
