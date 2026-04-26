@@ -1,0 +1,333 @@
+{
+  "common": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "confirm": "Confirmer",
+    "refresh": "Actualiser",
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès",
+    "close": "Fermer",
+    "search": "Rechercher",
+    "filter": "Filtrer",
+    "sort": "Trier",
+    "all": "Tout",
+    "none": "Aucun",
+    "yes": "Oui",
+    "no": "Non",
+    "actions": "Actions",
+    "settings": "Paramètres",
+    "back": "Retour",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "copy": "Copier",
+    "copied": "Copié !",
+    "upload": "Télécharger",
+    "download": "Télécharger",
+    "tryAgain": "Réessayer",
+    "platform": "Plateforme Graph-RAG",
+    "navigation": "Navigation",
+    "keyboardShortcuts": "Raccourcis clavier",
+    "keyboardShortcutsDesc": "Utilisez ces raccourcis pour naviguer rapidement",
+    "pressEscToClose": "Appuyez sur Échap pour fermer",
+    "skipToContent": "Aller au contenu principal",
+    "show": "Afficher",
+    "hide": "Masquer"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "graph": "Graphe de connaissances",
+    "documents": "Documents",
+    "query": "Requête",
+    "workspace": "Espace de travail",
+    "costs": "Coûts",
+    "apiExplorer": "Explorateur API",
+    "settings": "Paramètres"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "welcome": "Bienvenue sur EdgeQuake - Votre plateforme RAG de graphe de connaissances",
+    "stats": {
+      "documents": "Documents",
+      "documentsDesc": "Documents téléchargés",
+      "entities": "Entités",
+      "entitiesDesc": "Entités extraites",
+      "relationships": "Relations",
+      "relationshipsDesc": "Connexions entre entités",
+      "entityTypes": "Types d'entités",
+      "entityTypesDesc": "Catégories uniques"
+    },
+    "quickActions": {
+      "title": "Actions rapides",
+      "subtitle": "Commencez avec les tâches courantes",
+      "upload": "Télécharger des documents",
+      "uploadDesc": "Ajouter de nouveaux documents à votre base de connaissances",
+      "query": "Interroger les connaissances",
+      "queryDesc": "Poser des questions sur vos données",
+      "graph": "Voir le graphe",
+      "graphDesc": "Explorer les relations entre entités"
+    },
+    "recentActivity": {
+      "title": "Activité récente",
+      "subtitle": "Derniers téléchargements et traitements de documents",
+      "noActivity": "Aucune activité récente",
+      "uploadFirst": "Téléchargez votre premier document"
+    },
+    "system": {
+      "title": "État du système",
+      "subtitle": "Connexion API et santé",
+      "apiStatus": "État de l'API",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "version": "Version",
+      "storage": "Stockage",
+      "llmProvider": "Fournisseur LLM"
+    }
+  },
+  "header": {
+    "documents": "Documents",
+    "knowledgeGraph": "Graphe de connaissances",
+    "query": "Requête",
+    "settings": "Paramètres",
+    "language": "Langue"
+  },
+  "documents": {
+    "title": "Documents",
+    "subtitle": "Téléchargez et gérez les documents pour l'extraction du graphe de connaissances",
+    "upload": {
+      "title": "Télécharger",
+      "inProgress": "Téléchargement de {{count}} fichier(s)...",
+      "reading": "Étape 1 : Lecture du fichier...",
+      "uploading": "Étape 2 : Envoi vers le serveur...",
+      "extracting": "Étape 3 : Pipeline de traitement...",
+      "success": "{{count}} fichier(s) téléchargé(s) avec succès",
+      "error": "{{count}} fichier(s) ont échoué",
+      "complete": "Téléchargé ! Traitement en cours...",
+      "fileTooLarge": "Le fichier \"{{name}}\" est trop volumineux ({{size}}Mo). La taille maximale est de 10Mo.",
+      "invalidType": "Le fichier \"{{name}}\" a un format non supporté. Formats supportés : TXT, MD, JSON."
+    },
+    "uploadDrop": "Glissez-déposez des fichiers ou cliquez pour télécharger",
+    "uploadDropActive": "Déposez les fichiers ici...",
+    "uploadSupports": "Supporte les fichiers TXT, MD, JSON",
+    "clearAll": "Tout effacer",
+    "refresh": "Rafraîchir",
+    "noDocuments": "Aucun document",
+    "noDocumentsSubtitle": "Téléchargez des documents pour construire votre graphe de connaissances",
+    "deleteConfirm": "Supprimer tous les documents ?",
+    "deleteConfirmDescription": "Cela supprimera définitivement les {{count}} documents et leurs entités extraites. Cette action est irréversible.",
+    "documentCount": "Documents ({{count}})",
+    "table": {
+      "title": "Titre",
+      "status": "Statut",
+      "entities": "Entités",
+      "created": "Créé",
+      "actions": "Actions"
+    },
+    "actions": {
+      "view": "Voir les détails",
+      "reprocess": "Retraiter",
+      "delete": "Supprimer",
+      "viewInGraph": "Voir dans le graphe",
+      "cancel": "Annuler l'extraction"
+    },
+    "cancel": {
+      "success": "Traitement du document annulé",
+      "successDesc": "L'extraction a été arrêtée.",
+      "failed": "Échec de l'annulation",
+      "failedDesc": "Impossible d'annuler le traitement. Il est peut-être déjà terminé."
+    },
+    "status": {
+      "all": "Tous les statuts",
+      "pending": "En attente",
+      "processing": "En cours",
+      "completed": "Terminé",
+      "failed": "Échoué",
+      "partial_failure": "Échec Partiel",
+      "cancelled": "Annulé"
+    },
+    "pagination": {
+      "rowsPerPage": "Lignes par page :",
+      "page": "Page {{current}} sur {{total}}"
+    },
+    "filter": {
+      "status": "Filtrer par statut",
+      "sortBy": "Trier par :",
+      "created": "Créé",
+      "updated": "Mis à jour"
+    },
+    "details": {
+      "overview": "Aperçu",
+      "content": "Contenu",
+      "entities": "Entités",
+      "id": "ID du document",
+      "status": "Statut",
+      "created": "Créé",
+      "updated": "Dernière mise à jour",
+      "chunks": "Segments",
+      "error": "Erreur",
+      "noContent": "Aucun contenu disponible",
+      "noEntities": "Aucune entité extraite encore",
+      "entitiesExtracted": "{{count}} entités extraites",
+      "viewInGraphHint": "Voir dans le graphe de connaissances pour plus de détails"
+    }
+  },
+  "graph": {
+    "title": "Graphe de connaissances",
+    "noGraph": "Pas encore de graphe de connaissances",
+    "noGraphSubtitle": "Votre graphe de connaissances est vide. Téléchargez des documents pour extraire automatiquement les entités et les relations.",
+    "uploadDocuments": "Télécharger des documents",
+    "loading": "Chargement du graphe de connaissances...",
+    "nodeCount": "{{nodes}} nœuds · {{edges}} arêtes",
+    "controls": {
+      "zoomIn": "Zoom avant",
+      "zoomOut": "Zoom arrière",
+      "reset": "Réinitialiser la vue",
+      "fullscreen": "Plein écran",
+      "refresh": "Actualiser"
+    },
+    "layouts": {
+      "title": "Disposition",
+      "force": "Force Atlas",
+      "circular": "Circulaire",
+      "random": "Aléatoire"
+    },
+    "search": {
+      "placeholder": "Rechercher des nœuds...",
+      "noResults": "Aucun nœud trouvé"
+    },
+    "nodeDetails": {
+      "title": "Détails du nœud",
+      "type": "Type",
+      "connections": "Connexions",
+      "properties": "Propriétés",
+      "description": "Description",
+      "documents": "Documents sources"
+    },
+    "contextMenu": {
+      "viewDetails": "Voir les détails",
+      "expandNeighborhood": "Étendre le voisinage",
+      "findRelated": "Trouver les connexions",
+      "viewDocuments": "Voir les documents",
+      "copyId": "Copier l'ID"
+    },
+    "filters": {
+      "title": "Filtres",
+      "nodeTypes": "Types de nœuds",
+      "connectionRange": "Plage de connexions"
+    },
+    "legend": {
+      "title": "Légende",
+      "person": "Personne",
+      "organization": "Organisation",
+      "technology": "Technologie",
+      "location": "Lieu",
+      "other": "Autre"
+    },
+    "export": {
+      "title": "Exporter le graphe",
+      "png": "Exporter en PNG",
+      "svg": "Exporter en SVG",
+      "json": "Exporter en JSON",
+      "pngSuccess": "Graphe exporté en PNG",
+      "svgSuccess": "Graphe exporté en SVG",
+      "jsonSuccess": "Graphe exporté en JSON",
+      "svgComingSoon": "Export SVG bientôt disponible",
+      "failed": "Échec de l'export",
+      "noCanvas": "Canevas du graphe introuvable"
+    }
+  },
+  "query": {
+    "title": "Requête",
+    "subtitle": "Posez des questions sur votre graphe de connaissances",
+    "placeholder": "Posez une question...",
+    "submit": "Envoyer",
+    "startConversation": "Commencer une conversation",
+    "startConversationSubtitle": "Posez des questions sur votre graphe de connaissances",
+    "modes": {
+      "local": "Local",
+      "localDescription": "Recherche dans le voisinage des entités",
+      "global": "Global",
+      "globalDescription": "Recherche dans tout le graphe de connaissances",
+      "hybrid": "Hybride",
+      "hybridDescription": "Combiner recherche locale et globale",
+      "naive": "Naïf",
+      "naiveDescription": "Recherche simple par mots-clés"
+    },
+    "settings": {
+      "title": "Paramètres de requête",
+      "streaming": "Streaming",
+      "streamingDescription": "Afficher la réponse pendant la génération",
+      "topK": "Top K résultats",
+      "temperature": "Température",
+      "maxTokens": "Tokens maximum"
+    },
+    "response": {
+      "tokens": "{{count}} tokens",
+      "duration": "{{ms}}ms",
+      "thinking": "Réflexion...",
+      "thoughtFor": "A réfléchi pendant {{seconds}}s"
+    },
+    "sources": {
+      "title": "Sources",
+      "entities": "Entités",
+      "relationships": "Relations",
+      "documents": "Documents"
+    },
+    "history": {
+      "title": "Historique",
+      "recent": "Requêtes récentes",
+      "favorites": "Favoris",
+      "noHistory": "Pas d'historique de requêtes",
+      "clear": "Effacer l'historique"
+    }
+  },
+  "pipeline": {
+    "title": "État du pipeline",
+    "idle": "Pipeline inactif",
+    "busy": "Pipeline occupé",
+    "job": "Tâche : {{name}}",
+    "started": "Démarré : {{time}}",
+    "progress": "Progression",
+    "messages": "Messages",
+    "cancel": "Annuler le pipeline",
+    "processed": "{{current}} sur {{total}} documents traités"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "appearance": {
+      "title": "Apparence",
+      "theme": "Thème",
+      "themeLight": "Clair",
+      "themeDark": "Sombre",
+      "themeSystem": "Système",
+      "language": "Langue"
+    },
+    "api": {
+      "title": "Configuration API",
+      "endpoint": "Point d'accès API",
+      "status": "État de la connexion",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté"
+    },
+    "data": {
+      "title": "Gestion des données",
+      "backup": "Sauvegarde des paramètres",
+      "backupDesc": "Exporter ou importer vos paramètres en JSON",
+      "export": "Exporter",
+      "import": "Importer",
+      "exported": "Paramètres exportés avec succès",
+      "imported": "Paramètres importés avec succès",
+      "importError": "Échec de l'importation : {{error}}",
+      "invalidFile": "Format de fichier de paramètres invalide"
+    }
+  },
+  "errors": {
+    "loadDocuments": "Erreur lors du chargement des documents",
+    "loadGraph": "Erreur lors du chargement du graphe",
+    "uploadFailed": "Échec du téléchargement : {{error}}",
+    "deleteFailed": "Échec de la suppression : {{error}}",
+    "queryFailed": "Échec de la requête : {{error}}",
+    "connectionFailed": "Échec de la connexion"
+  }
+}

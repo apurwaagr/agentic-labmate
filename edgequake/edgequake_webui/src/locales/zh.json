@@ -1,0 +1,333 @@
+{
+  "common": {
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "confirm": "确认",
+    "refresh": "刷新",
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "close": "关闭",
+    "search": "搜索",
+    "filter": "筛选",
+    "sort": "排序",
+    "all": "全部",
+    "none": "无",
+    "yes": "是",
+    "no": "否",
+    "actions": "操作",
+    "settings": "设置",
+    "back": "返回",
+    "next": "下一页",
+    "previous": "上一页",
+    "copy": "复制",
+    "copied": "已复制！",
+    "upload": "上传",
+    "download": "下载",
+    "tryAgain": "重试",
+    "platform": "图谱RAG平台",
+    "navigation": "导航",
+    "keyboardShortcuts": "键盘快捷键",
+    "keyboardShortcutsDesc": "使用这些快捷键快速导航",
+    "pressEscToClose": "按 Esc 关闭",
+    "skipToContent": "跳转到主要内容",
+    "show": "显示",
+    "hide": "隐藏"
+  },
+  "nav": {
+    "dashboard": "仪表板",
+    "graph": "知识图谱",
+    "documents": "文档",
+    "query": "查询",
+    "workspace": "工作区",
+    "costs": "成本",
+    "apiExplorer": "API浏览器",
+    "settings": "设置"
+  },
+  "dashboard": {
+    "title": "仪表板",
+    "welcome": "欢迎使用 EdgeQuake - 您的知识图谱 RAG 平台",
+    "stats": {
+      "documents": "文档",
+      "documentsDesc": "已上传文档",
+      "entities": "实体",
+      "entitiesDesc": "提取的实体",
+      "relationships": "关系",
+      "relationshipsDesc": "实体连接",
+      "entityTypes": "实体类型",
+      "entityTypesDesc": "唯一类别"
+    },
+    "quickActions": {
+      "title": "快捷操作",
+      "subtitle": "开始常见任务",
+      "upload": "上传文档",
+      "uploadDesc": "添加新文档到知识库",
+      "query": "查询知识",
+      "queryDesc": "提问您的数据",
+      "graph": "查看图谱",
+      "graphDesc": "探索实体关系"
+    },
+    "recentActivity": {
+      "title": "最近活动",
+      "subtitle": "最新文档上传和处理",
+      "noActivity": "暂无活动",
+      "uploadFirst": "上传您的第一个文档"
+    },
+    "system": {
+      "title": "系统状态",
+      "subtitle": "API 连接和健康状态",
+      "apiStatus": "API 状态",
+      "connected": "已连接",
+      "disconnected": "已断开",
+      "version": "版本",
+      "storage": "存储",
+      "llmProvider": "LLM 提供者"
+    }
+  },
+  "header": {
+    "documents": "文档",
+    "knowledgeGraph": "知识图谱",
+    "query": "查询",
+    "settings": "设置",
+    "language": "语言"
+  },
+  "documents": {
+    "title": "文档",
+    "subtitle": "上传和管理用于知识图谱提取的文档",
+    "upload": {
+      "title": "上传",
+      "inProgress": "正在上传 {{count}} 个文件...",
+      "reading": "步骤 1: 读取文件...",
+      "uploading": "步骤 2: 上传到服务器...",
+      "extracting": "步骤 3: 处理管道...",
+      "success": "{{count}} 个文件上传成功",
+      "error": "{{count}} 个文件上传失败",
+      "complete": "已上传！正在后台处理...",
+      "fileTooLarge": "文件 \"{{name}}\" 太大 ({{size}}MB)。最大限制为 10MB。",
+      "invalidType": "文件 \"{{name}}\" 格式不支持。支持格式：TXT、MD、JSON。"
+    },
+    "uploadDrop": "拖放文件或点击上传",
+    "uploadDropActive": "将文件放在这里...",
+    "uploadSupports": "支持 TXT、MD、JSON 文件",
+    "clearAll": "清除全部",
+    "refresh": "刷新",
+    "noDocuments": "暂无文档",
+    "noDocumentsSubtitle": "上传文档以构建您的知识图谱",
+    "deleteConfirm": "删除所有文档？",
+    "deleteConfirmDescription": "这将永久删除所有 {{count}} 个文档及其提取的实体。此操作无法撤销。",
+    "documentCount": "文档 ({{count}})",
+    "table": {
+      "title": "标题",
+      "status": "状态",
+      "entities": "实体",
+      "created": "创建时间",
+      "actions": "操作"
+    },
+    "actions": {
+      "view": "查看详情",
+      "reprocess": "重新处理",
+      "delete": "删除",
+      "viewInGraph": "在图谱中查看",
+      "cancel": "取消提取"
+    },
+    "cancel": {
+      "success": "文档处理已取消",
+      "successDesc": "提取已停止。",
+      "failed": "取消失败",
+      "failedDesc": "无法取消处理。可能已经完成。"
+    },
+    "status": {
+      "all": "所有状态",
+      "pending": "待处理",
+      "processing": "处理中",
+      "completed": "已完成",
+      "failed": "失败",
+      "partial_failure": "部分失败",
+      "cancelled": "已取消"
+    },
+    "pagination": {
+      "rowsPerPage": "每页行数：",
+      "page": "第 {{current}} 页，共 {{total}} 页"
+    },
+    "filter": {
+      "status": "按状态筛选",
+      "sortBy": "排序方式：",
+      "created": "创建时间",
+      "updated": "更新时间"
+    },
+    "details": {
+      "overview": "概览",
+      "content": "内容",
+      "entities": "实体",
+      "id": "文档 ID",
+      "status": "状态",
+      "created": "创建时间",
+      "updated": "最后更新",
+      "chunks": "分块数",
+      "error": "错误",
+      "noContent": "无可用内容",
+      "noEntities": "尚未提取实体",
+      "entitiesExtracted": "已提取 {{count}} 个实体",
+      "viewInGraphHint": "在知识图谱中查看详细实体信息"
+    }
+  },
+  "graph": {
+    "title": "知识图谱",
+    "noGraph": "暂无知识图谱",
+    "noGraphSubtitle": "您的知识图谱为空。上传文档以自动提取实体和关系。",
+    "uploadDocuments": "上传文档",
+    "loading": "正在加载知识图谱...",
+    "nodeCount": "{{nodes}} 个节点 · {{edges}} 条边",
+    "controls": {
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "reset": "重置视图",
+      "fullscreen": "全屏",
+      "refresh": "刷新"
+    },
+    "layouts": {
+      "title": "布局",
+      "force": "力导向",
+      "circular": "环形",
+      "random": "随机"
+    },
+    "search": {
+      "placeholder": "搜索节点...",
+      "noResults": "未找到节点"
+    },
+    "nodeDetails": {
+      "title": "节点详情",
+      "type": "类型",
+      "connections": "连接",
+      "properties": "属性",
+      "description": "描述",
+      "documents": "来源文档"
+    },
+    "contextMenu": {
+      "viewDetails": "查看详情",
+      "expandNeighborhood": "展开邻域",
+      "findRelated": "查找相关",
+      "viewDocuments": "查看文档",
+      "copyId": "复制 ID"
+    },
+    "filters": {
+      "title": "筛选器",
+      "nodeTypes": "节点类型",
+      "connectionRange": "连接范围"
+    },
+    "legend": {
+      "title": "图例",
+      "person": "人物",
+      "organization": "组织",
+      "technology": "技术",
+      "location": "地点",
+      "other": "其他"
+    },
+    "export": {
+      "title": "导出图谱",
+      "png": "导出为 PNG",
+      "svg": "导出为 SVG",
+      "json": "导出为 JSON",
+      "pngSuccess": "图谱已导出为 PNG",
+      "svgSuccess": "图谱已导出为 SVG",
+      "jsonSuccess": "图谱已导出为 JSON",
+      "svgComingSoon": "SVG 导出功能即将推出",
+      "failed": "导出失败",
+      "noCanvas": "未找到图谱画布"
+    }
+  },
+  "query": {
+    "title": "查询",
+    "subtitle": "询问有关知识图谱的问题",
+    "placeholder": "提问...",
+    "submit": "发送",
+    "startConversation": "开始对话",
+    "startConversationSubtitle": "询问有关知识图谱的问题",
+    "modes": {
+      "local": "本地",
+      "localDescription": "在实体邻域内搜索",
+      "global": "全局",
+      "globalDescription": "搜索整个知识图谱",
+      "hybrid": "混合",
+      "hybridDescription": "结合本地和全局搜索",
+      "naive": "朴素",
+      "naiveDescription": "简单关键词搜索"
+    },
+    "settings": {
+      "title": "查询设置",
+      "streaming": "流式传输",
+      "streamingDescription": "在生成时显示响应",
+      "topK": "Top K 结果",
+      "temperature": "温度",
+      "maxTokens": "最大令牌数"
+    },
+    "response": {
+      "tokens": "{{count}} 个令牌",
+      "duration": "{{ms}}毫秒",
+      "thinking": "思考中...",
+      "thoughtFor": "思考了 {{seconds}}秒"
+    },
+    "sources": {
+      "title": "来源",
+      "entities": "实体",
+      "relationships": "关系",
+      "documents": "文档"
+    },
+    "history": {
+      "title": "历史",
+      "recent": "最近查询",
+      "favorites": "收藏",
+      "noHistory": "无查询历史",
+      "clear": "清除历史"
+    }
+  },
+  "pipeline": {
+    "title": "管道状态",
+    "idle": "管道空闲",
+    "busy": "管道繁忙",
+    "job": "作业：{{name}}",
+    "started": "开始时间：{{time}}",
+    "progress": "进度",
+    "messages": "消息",
+    "cancel": "取消管道",
+    "processed": "已处理 {{current}}/{{total}} 个文档"
+  },
+  "settings": {
+    "title": "设置",
+    "appearance": {
+      "title": "外观",
+      "theme": "主题",
+      "themeLight": "浅色",
+      "themeDark": "深色",
+      "themeSystem": "系统",
+      "language": "语言"
+    },
+    "api": {
+      "title": "API 配置",
+      "endpoint": "API 端点",
+      "status": "连接状态",
+      "connected": "已连接",
+      "disconnected": "已断开"
+    },
+    "data": {
+      "title": "数据管理",
+      "backup": "设置备份",
+      "backupDesc": "导出或导入您的设置为 JSON",
+      "export": "导出",
+      "import": "导入",
+      "exported": "设置导出成功",
+      "imported": "设置导入成功",
+      "importError": "导入失败：{{error}}",
+      "invalidFile": "无效的设置文件格式"
+    }
+  },
+  "errors": {
+    "loadDocuments": "加载文档时出错",
+    "loadGraph": "加载图谱时出错",
+    "uploadFailed": "上传失败：{{error}}",
+    "deleteFailed": "删除失败：{{error}}",
+    "queryFailed": "查询失败：{{error}}",
+    "connectionFailed": "连接失败"
+  }
+}
