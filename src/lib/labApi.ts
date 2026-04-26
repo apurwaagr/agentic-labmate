@@ -35,6 +35,8 @@ export type ProtocolStep = {
   quantity: string;
   duration: string;
   source: string;
+  sourceUri?: string;
+  sourceTitle?: string;
   riskLevel?: "low" | "med" | "high";
   riskNote?: string;
   validationChecks: string[];
@@ -127,6 +129,9 @@ export type ReviewRecord = {
   reviewer: string;
   correction: string;
   severity: "low" | "medium" | "high";
+  domain?: string;
+  hypothesis?: string;
+  tags?: string[];
 };
 
 export type ChatCitation = {

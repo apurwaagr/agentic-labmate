@@ -62,6 +62,9 @@ export function ContextStore({
         section,
         correction: trimmed,
         severity: "medium",
+        domain: plan.domain,
+        hypothesis: plan.hypothesis,
+        tags: [plan.domain, section].filter(Boolean),
       });
       setCorrection("");
       await onReviewAdded();

@@ -66,10 +66,22 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                       <Clock3 className="size-3" />
                       {step.duration}
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-1">
-                      <BookOpen className="size-3" />
-                      {step.source}
-                    </span>
+                    {step.sourceUri ? (
+                      <a
+                        href={step.sourceUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-1 hover:text-foreground"
+                      >
+                        <BookOpen className="size-3" />
+                        {step.source}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-panel px-2 py-1">
+                        <BookOpen className="size-3" />
+                        {step.source}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <ChevronDown className={`mt-1 size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -82,6 +94,11 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                       <div>
                         <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">What to do</div>
                         <p className="text-sm leading-relaxed text-foreground/85">{step.detail}</p>
+                        {step.sourceTitle && (
+                          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                            Grounded in: {step.sourceTitle}
+                          </p>
+                        )}
                       </div>
                       {step.validationChecks.length > 0 && (
                         <div className="rounded-xl border border-border bg-muted/25 p-3">

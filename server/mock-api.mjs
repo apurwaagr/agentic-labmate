@@ -447,6 +447,24 @@ function stripTags(text = "") {
   return text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function parseRichText(value = "") {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    const blocks = Array.isArray(parsed?.blocks) ? parsed.blocks : [];
+    return blocks
+      .map((block) => block?.text || "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch {
+    return stripTags(value);
+  }
+}
+
 function abstractFromInvertedIndex(index) {
   if (!index || typeof index !== "object") {
     return "";
@@ -491,6 +509,15 @@ function keywordCost(label = "") {
 }
 
 function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
+  const protocolMaterialTerms = evidencePack.items
+    .filter((item) => item.source === "protocols.io" && item.protocolMaterials)
+    .flatMap((item) =>
+      item.protocolMaterials
+        .split(/[.;\n]/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 4 && line.length < 80),
+    );
+
   const text = `${hypothesis} ${parsed.intervention || ""} ${parsed.control || ""} ${parsed.outcome || ""} ${evidencePack.items
     .map((item) => item.title)
     .join(" ")}`.toLowerCase();
@@ -532,6 +559,8 @@ function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
       pushCandidate(entry.label);
     }
   }
+
+  protocolMaterialTerms.forEach((term) => pushCandidate(term));
 
   [parsed.intervention, parsed.subject, parsed.outcome, parsed.control]
     .map((item) => (item || "").trim())
@@ -599,6 +628,41 @@ function relevanceScore(query, title = "", abstract = "") {
 
   const overlap = queryTokens.filter((token) => haystack.has(token)).length;
   return overlap / queryTokens.length;
+}
+
+function relatedReviewsForHypothesis(hypothesis, experimentId) {
+  const domain = detectDomain(hypothesis).name;
+  const hypothesisTokens = new Set(tokenize(hypothesis));
+
+  return reviewStore
+    .map((review) => {
+      const reviewTokens = new Set([
+        ...tokenize(review.correction || ""),
+        ...tokenize(review.section || ""),
+        ...tokenize(review.hypothesis || ""),
+        ...((review.tags || []).flatMap((tag) => tokenize(tag))),
+      ]);
+
+      let score = 0;
+      if (review.experimentId === experimentId) {
+        score += 5;
+      }
+      if (review.domain === domain) {
+        score += 3;
+      }
+
+      for (const token of hypothesisTokens) {
+        if (reviewTokens.has(token)) {
+          score += 1;
+        }
+      }
+
+      return { review, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.review)
+    .slice(0, 8);
 }
 
 function normalizeEvidence(query, item) {
@@ -694,12 +758,15 @@ async function fetchProtocolsIoEvidence(hypothesis) {
   return items.map((item) =>
     normalizeEvidence(hypothesis, {
       title: item.title || "Untitled protocol",
-      abstract: item.description || item.doi || "",
+      abstract: [parseRichText(item.description), parseRichText(item.before_start), parseRichText(item.materials_text)].filter(Boolean).join(" "),
       year: item.published_on ? new Date(item.published_on * 1000).getFullYear() : null,
       doi: item.doi ? String(item.doi).replace(/^https?:\/\/(dx\.)?doi\.org\//, "") : "",
       url: item.uri ? `https://www.protocols.io/view/${item.uri}` : "https://www.protocols.io/",
       source: "protocols.io",
       provenance: "protocols.io",
+      protocolDescription: parseRichText(item.description),
+      protocolBeforeStart: parseRichText(item.before_start),
+      protocolMaterials: parseRichText(item.materials_text),
     }),
   );
 }
@@ -824,15 +891,28 @@ function buildDynamicSteps(parsed, evidencePack) {
   const firstRef = evidencePack.items[0];
   const secondRef = evidencePack.items[1];
   const assay = parsed.outcome || "primary readout";
+  const protocolRef = evidencePack.items.find((item) => item.source === "protocols.io");
+  const protocolContext = protocolRef
+    ? [protocolRef.protocolDescription, protocolRef.protocolBeforeStart, protocolRef.protocolMaterials]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 260)
+    : "";
 
   return [
     {
       id: "step-1",
       title: "Confirm the experimental arms against retrieved precedent",
-      detail: `Translate the hypothesis into an intervention arm (${parsed.intervention}) and a control arm (${parsed.control}) in the target system (${parsed.subject}). Use the closest retrieved paper to sanity-check whether the assay context matches the proposed experiment.`,
+      detail: `Translate the hypothesis into an intervention arm (${parsed.intervention}) and a control arm (${parsed.control}) in the target system (${parsed.subject}). ${
+        protocolContext
+          ? `Use the retrieved protocol context "${protocolContext}" to sanity-check whether the assay context matches the proposed experiment.`
+          : "Use the closest retrieved paper to sanity-check whether the assay context matches the proposed experiment."
+      }`,
       quantity: "1 design review",
       duration: "4 hours",
       source: firstRef?.source || "literature API",
+      sourceUri: firstRef?.url || evidenceUrl(firstRef),
+      sourceTitle: firstRef?.title,
       riskLevel: "med",
       riskNote: "If the retrieved precedent differs materially from the proposed biological system or assay, the downstream workflow may not transfer cleanly.",
       validationChecks: [
@@ -843,10 +923,16 @@ function buildDynamicSteps(parsed, evidencePack) {
     {
       id: "step-2",
       title: "Assemble materials and setup around the retrieved workflow",
-      detail: `Procure the primary intervention material, the biological system, and the assay reagents needed to measure ${assay}. Match setup choices to the retrieved protocol family instead of assuming local defaults.`,
+      detail: `Procure the primary intervention material, the biological system, and the assay reagents needed to measure ${assay}. ${
+        protocolRef?.protocolMaterials
+          ? `Prioritize materials explicitly surfaced by the retrieved protocol: ${protocolRef.protocolMaterials.slice(0, 220)}.`
+          : "Match setup choices to the retrieved protocol family instead of assuming local defaults."
+      }`,
       quantity: "Critical-path materials",
       duration: "1 day",
       source: secondRef?.source || firstRef?.source || "literature API",
+      sourceUri: secondRef?.url || evidenceUrl(secondRef) || protocolRef?.url,
+      sourceTitle: secondRef?.title || firstRef?.title,
       riskLevel: "med",
       riskNote: "Materials inferred from literature metadata can still mismatch the exact reagent format or instrument model available in the lab.",
       validationChecks: [
@@ -861,6 +947,8 @@ function buildDynamicSteps(parsed, evidencePack) {
       quantity: "Pilot batch",
       duration: "2 days",
       source: firstRef?.source || "literature API",
+      sourceUri: firstRef?.url || evidenceUrl(firstRef),
+      sourceTitle: firstRef?.title,
       riskLevel: "high",
       riskNote: "The biggest scientific risk is measuring the right endpoint with the wrong timing, normalization, or control condition.",
       validationChecks: [
@@ -875,6 +963,8 @@ function buildDynamicSteps(parsed, evidencePack) {
       quantity: "1 review pass",
       duration: "4 hours",
       source: secondRef?.source || firstRef?.source || "literature API",
+      sourceUri: secondRef?.url || evidenceUrl(secondRef) || firstRef?.url || evidenceUrl(firstRef),
+      sourceTitle: secondRef?.title || firstRef?.title,
       riskLevel: "med",
       riskNote: "A plan can look scientifically plausible yet still fail operationally if timing, variance, or procurement issues diverge from precedent.",
       validationChecks: [
@@ -1633,7 +1723,7 @@ ${hypothesis}
 async function generatePlan(hypothesis) {
   const domain = detectDomain(hypothesis);
   const experimentId = domain.id;
-  const relatedReviews = reviewStore.filter((review) => review.experimentId === experimentId);
+  const relatedReviews = relatedReviewsForHypothesis(hypothesis, experimentId);
   let fallback;
 
   try {
@@ -2152,7 +2242,7 @@ createServer(async (request, response) => {
       const hypothesis = body.hypothesis || requireHypothesis();
       const experimentId = body.experimentId || detectDomain(hypothesis).id;
       const requestReviews = Array.isArray(body.reviews) ? body.reviews : [];
-      const reviews = requestReviews.length > 0 ? requestReviews : reviewStore.filter((review) => review.experimentId === experimentId);
+      const reviews = requestReviews.length > 0 ? requestReviews : relatedReviewsForHypothesis(hypothesis, experimentId);
       sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext));
       return;
     }
@@ -2174,6 +2264,9 @@ createServer(async (request, response) => {
         reviewer: body.reviewer || "Scientist reviewer",
         correction: body.correction || "No correction provided.",
         severity: body.severity || "medium",
+        domain: body.domain || undefined,
+        hypothesis: body.hypothesis || undefined,
+        tags: Array.isArray(body.tags) ? body.tags : [],
       };
       reviewStore.unshift(review);
       persistReviewStore();
