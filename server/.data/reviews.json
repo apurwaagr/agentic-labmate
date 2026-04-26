@@ -1,0 +1,54 @@
+[
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
+    "reviewer": "Scientist Apurwa",
+    "correction": "learn more",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "Replacing sucrose with trehalose as a cryoprotectant in the freezing medium will increase post-thaw viability of HeLa cells by at least 15 percentage points compared to the standard DMSO protocol, due to trehalose’s superior membrane stabilization at low temperatures.",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "custom-gold-nanoparticles-of-15-20nm-diameter-can-be-sy",
+    "section": "General",
+    "reviewer": "Scientist",
+    "correction": "test",
+    "severity": "medium",
+    "domain": "Molecular Biology",
+    "hypothesis": "Gold nanoparticles of 15-20nm diameter can be synthesized using the Turkevich method with trisodium citrate as the reducing agent, and particle size can be controlled by varying the citrate-to-gold ratio.",
+    "tags": [
+      "Molecular Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
+    "reviewer": "Scientist",
+    "correction": "Another reference for HeLa",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "CRISPR-Cas9 mediated knockout of TP53 in HeLa cells will result in altered cell cycle progression and increased resistance to DNA-damaging agents.",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
+    "reviewer": "Scientist",
+    "correction": "add the design rview",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "Replacing sucrose with trehalose as a cryoprotectant in the freezing medium will increase post-thaw viability of HeLa cells by at least 15 percentage points compared to the standard DMSO protocol, due to trehalose’s superior membrane stabilization at low temperatures.",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  }
+]

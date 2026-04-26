@@ -8,66 +8,60 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Brushed Clarity — clinical light palette */
-    --background: 230 25% 97%;
-    --foreground: 230 25% 12%;
+    /* Professional Scientific Lab palette — precise, high-contrast, authoritative */
+    --background: 220 28% 97%;
+    --foreground: 222 36% 8%;
 
-    --surface: 230 20% 95%;
+    --surface: 218 22% 94%;
     --panel: 0 0% 100%;
 
     --card: 0 0% 100%;
-    --card-foreground: 230 25% 12%;
+    --card-foreground: 222 36% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 230 25% 12%;
+    --popover-foreground: 222 36% 8%;
 
-    /* Brand: muted cool blue */
-    --primary: 230 35% 38%;
-    --primary-foreground: 230 25% 98%;
-    --primary-soft: 230 40% 94%;
+    /* Brand: deep science indigo — research authority */
+    --primary: 232 75% 36%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 230 78% 95%;
+    --primary-dark: 232 75% 24%;
 
-    --secondary: 230 20% 93%;
-    --secondary-foreground: 230 25% 18%;
+    --secondary: 216 20% 91%;
+    --secondary-foreground: 222 28% 18%;
 
-    --muted: 230 20% 94%;
-    --muted-foreground: 230 12% 42%;
+    --muted: 218 20% 94%;
+    --muted-foreground: 218 16% 44%;
 
-    /* Accent: warm scientific amber */
-    --accent: 42 80% 55%;
-    --accent-foreground: 230 25% 12%;
-    --accent-soft: 42 90% 92%;
+    /* Accent: scientific teal — discovery, precision */
+    --accent: 176 68% 32%;
+    --accent-foreground: 0 0% 100%;
+    --accent-soft: 176 58% 93%;
 
-    --success: 152 55% 40%;
-    --success-soft: 152 50% 92%;
-    --warning: 32 90% 50%;
-    --warning-soft: 32 95% 93%;
-    --danger: 0 70% 52%;
-    --danger-soft: 0 80% 95%;
+    --success: 158 60% 28%;
+    --success-soft: 158 52% 92%;
+    --warning: 36 90% 40%;
+    --warning-soft: 36 88% 93%;
+    --danger: 350 68% 40%;
+    --danger-soft: 350 68% 95%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 350 68% 40%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 218 22% 86%;
+    --input: 218 22% 86%;
+    --ring: 232 75% 36%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 220 24% 98%;
+    --sidebar-foreground: 222 28% 22%;
+    --sidebar-primary: 232 75% 36%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 218 20% 94%;
+    --sidebar-accent-foreground: 222 28% 22%;
+    --sidebar-border: 218 22% 89%;
+    --sidebar-ring: 232 75% 36%;
   }
 
   .dark {
@@ -115,16 +109,42 @@ All colors MUST be HSL.
   }
 
   body {
-    font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
-    background:
-      radial-gradient(circle at top left, hsl(var(--primary-soft)) 0%, transparent 28%),
-      linear-gradient(180deg, hsl(var(--background)), hsl(var(--surface)));
+    font-family: "IBM Plex Sans", "Inter", "Segoe UI", system-ui, sans-serif;
+    background: hsl(var(--background));
     @apply bg-background text-foreground antialiased;
+    font-size: 14px;
+    line-height: 1.6;
+    font-feature-settings: "cv01", "cv02", "cv03", "cv06", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   code,
   pre,
   .font-mono {
     font-family: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, monospace;
+  }
+
+  /* Refined scrollbars for lab panels */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  /* Focus ring standardisation */
+  :focus-visible {
+    outline: 2px solid hsl(var(--primary) / 0.5);
+    outline-offset: 2px;
   }
 }

@@ -1,47 +1,113 @@
-import { ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 import type { ValidationPlan } from "@/lib/labApi";
+
+/** Heuristic: gate text contains "fail", "no-go", "halt", "stop", "abort" → NO-GO */
+function gateStatus(gate: string): "go" | "nogo" | "conditional" {
+  const lower = gate.toLowerCase();
+  if (/(fail|no.go|halt|stop|abort|reject)/.test(lower)) return "nogo";
+  if (/(if|when|unless|only if|condition|depend|threshold)/.test(lower)) return "conditional";
+  return "go";
+}
+
+const gateStyle = {
+  go: {
+    dot: "bg-success",
+    badge: "border-success/25 bg-success-soft text-success",
+    label: "GO",
+  },
+  conditional: {
+    dot: "bg-warning",
+    badge: "border-warning/25 bg-warning-soft text-warning",
+    label: "COND.",
+  },
+  nogo: {
+    dot: "bg-danger",
+    badge: "border-danger/25 bg-danger-soft text-danger",
+    label: "NO-GO",
+  },
+};
 
 export function ValidationCard({ validation }: { validation: ValidationPlan }) {
   return (
-    <section className="rounded-xl bg-panel border border-border shadow-sm p-5">
-      <header className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-primary" />
-          <h3 className="text-base font-semibold">Validation and Go / No-Go Gates</h3>
+    <section className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
+      {/* Header */}
+      <header className="border-b border-border bg-[radial-gradient(circle_at_top_right,_hsl(var(--success-soft)),_transparent_55%)] px-5 py-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-success text-white shadow-sm">
+              <ShieldCheck className="size-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold leading-tight">Validation &amp; Go / No-Go Gates</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Scientific decision criteria before proceeding to next phase</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success-soft px-2.5 py-1 text-success">
+              <span className="size-1.5 rounded-full bg-success" />
+              {validation.decisionGates.filter((g) => gateStatus(g) === "go").length} GO
+            </span>
+            {validation.decisionGates.filter((g) => gateStatus(g) === "conditional").length > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning-soft px-2.5 py-1 text-warning">
+                <span className="size-1.5 rounded-full bg-warning" />
+                {validation.decisionGates.filter((g) => gateStatus(g) === "conditional").length} COND
+              </span>
+            )}
+            {validation.decisionGates.filter((g) => gateStatus(g) === "nogo").length > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/25 bg-danger-soft px-2.5 py-1 text-danger">
+                <span className="size-1.5 rounded-full bg-danger" />
+                {validation.decisionGates.filter((g) => gateStatus(g) === "nogo").length} NO-GO
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Primary metric</div>
-          <div className="text-sm font-medium">{validation.primaryMetric}</div>
-          <div className="text-xs text-muted-foreground mt-3">{validation.successCriteria}</div>
+      <div className="p-5 space-y-4">
+        {/* Primary metric — hero */}
+        <div className="rounded-xl border-2 border-success/25 bg-success-soft/40 p-3 flex items-start gap-3">
+          <CheckCircle2 className="size-4 shrink-0 text-success mt-0.5" />
+          <div>
+            <div className="text-xs font-bold text-foreground">{validation.primaryMetric}</div>
+            <div className="mt-0.5 text-[11px] text-foreground/70 leading-snug">{validation.successCriteria}</div>
+          </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Decision gates</div>
-          <ul className="space-y-2">
-            {validation.decisionGates.map((gate) => (
-              <li key={gate} className="text-xs text-foreground/85">
-                {gate}
+        {/* Gates — compact chip list */}
+        <div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5">
+            <ShieldCheck className="size-3 text-primary" />Decision gates
+          </div>
+          <ul className="space-y-1.5">
+            {validation.decisionGates.map((gate) => {
+              const status = gateStatus(gate);
+              const style = gateStyle[status];
+              return (
+                <li key={gate} className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <span className={`mt-0.5 shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${style.badge}`}>
+                    {style.label}
+                  </span>
+                  <span className="text-[11px] leading-snug text-foreground/85">{gate}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Failure criteria — compact chips */}
+        <div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-danger flex items-center gap-1.5">
+            <XCircle className="size-3" />Failure / abort criteria
+          </div>
+          <ul className="flex flex-col gap-1">
+            {validation.failureCriteria.map((item) => (
+              <li key={item} className="flex items-start gap-2 rounded-lg border border-danger/15 bg-danger-soft/20 px-3 py-1.5">
+                <XCircle className="size-3 mt-0.5 shrink-0 text-danger/60" />
+                <span className="text-[11px] leading-snug text-foreground/80">{item}</span>
               </li>
             ))}
           </ul>
         </div>
-      </div>
-
-      <div className="mt-4 rounded-lg border border-danger/20 bg-danger-soft/30 p-4">
-        <div className="flex items-center gap-2 text-danger text-sm font-medium mb-2">
-          <XCircle className="size-4" />
-          Failure criteria
-        </div>
-        <ul className="space-y-2">
-          {validation.failureCriteria.map((item) => (
-            <li key={item} className="text-xs text-foreground/85">
-              {item}
-            </li>
-          ))}
-        </ul>
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BookOpen, DollarSign, ExternalLink, MessageSquareWarning, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, DollarSign, ExternalLink, Info, MessageSquareWarning, Send, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import {
   budgetRegions,
   adjustedBudgetAmount,
@@ -10,8 +10,6 @@ import {
   type ExperimentPlan,
   type ReviewRecord,
 } from "@/lib/labApi";
-import { MoleculeCard } from "@/components/lab/MoleculeCard";
-
 function referenceHref(source: string, uri?: string) {
   if (uri) {
     return uri;
@@ -47,6 +45,8 @@ export function ContextStore({
   const [section, setSection] = useState("General");
   const [correction, setCorrection] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assumptionsOpen, setAssumptionsOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
 
   async function submitReview() {
     const trimmed = correction.trim();
@@ -62,6 +62,9 @@ export function ContextStore({
         section,
         correction: trimmed,
         severity: "medium",
+        domain: plan.domain,
+        hypothesis: plan.hypothesis,
+        tags: [plan.domain, section].filter(Boolean),
       });
       setCorrection("");
       await onReviewAdded();
@@ -71,211 +74,323 @@ export function ContextStore({
   }
 
   const scientistGaps = scientistGapsForPlan(plan);
+  const removedSummaryLine = "Related literature describes adjacent interventions and outcome metrics, but the exact combination in this hypothesis has not been fully replicated. Review the retrieved references to identify the closest prior art.";
+  const noveltySummary = (plan.novelty.summary || "").replace(removedSummaryLine, "").trim();
+  const uniqueNoveltyReferences = plan.novelty.references.filter((reference, index, all) => {
+    const key = `${(reference.uri || "").trim().toLowerCase()}|${reference.source.trim().toLowerCase()}|${(reference.title || "").trim().toLowerCase()}`;
+    return all.findIndex((candidate) => {
+      const candidateKey = `${(candidate.uri || "").trim().toLowerCase()}|${candidate.source.trim().toLowerCase()}|${(candidate.title || "").trim().toLowerCase()}`;
+      return candidateKey === key;
+    }) === index;
+  });
+  const noveltyReferenceKeys = new Set(
+    uniqueNoveltyReferences.map((reference) => `${(reference.uri || "").trim().toLowerCase()}|${reference.source.trim().toLowerCase()}`),
+  );
+  const uniquePlanSources = (plan.sources || []).filter((source, index, all) => {
+    const key = `${(source.uri || "").trim().toLowerCase()}|${source.source.trim().toLowerCase()}`;
+    if (noveltyReferenceKeys.has(key)) {
+      return false;
+    }
+
+    return all.findIndex((candidate) => {
+      const candidateKey = `${(candidate.uri || "").trim().toLowerCase()}|${candidate.source.trim().toLowerCase()}`;
+      return candidateKey === key;
+    }) === index;
+  });
 
   return (
-    <aside className="w-[390px] shrink-0 flex flex-col gap-4 p-4 border-l border-border bg-surface overflow-y-auto">
-      <div className="rounded-2xl bg-panel border border-border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <BookOpen className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold">Literature and Novelty</h3>
+    <aside className="w-full xl:w-[360px] shrink-0 flex flex-col gap-3 p-3 border-l border-border bg-surface overflow-y-auto h-full">
+
+      {/* Literature & Novelty — enhanced */}
+      <div className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
+        {/* Signal header */}
+        {(() => {
+          const sig = plan.novelty.signal;
+          const isExact = sig === "exact match found";
+          const isSimilar = sig === "similar work exists";
+          const headerCls = isExact
+            ? "bg-danger-soft/60 border-b border-danger/20"
+            : isSimilar
+            ? "bg-warning-soft/60 border-b border-warning/20"
+            : "bg-success-soft/60 border-b border-success/20";
+          const icon = isExact ? <XCircle className="size-4 text-danger" /> : isSimilar ? <AlertTriangle className="size-4 text-warning" /> : <Sparkles className="size-4 text-success" />;
+          const badge = isExact
+            ? "border-danger/30 bg-danger-soft text-danger"
+            : isSimilar
+            ? "border-warning/30 bg-warning-soft text-warning"
+            : "border-success/30 bg-success-soft text-success";
+          return (
+            <>
+              <div className={`flex items-center gap-2.5 px-3.5 py-3 ${headerCls}`}>
+                {icon}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-0.5">Novelty Signal</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge}`}>{sig}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="px-3.5 pt-2.5 pb-1">
+                {noveltySummary && <p className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{noveltySummary}</p>}
+              </div>
+            </>
+          );
+        })()}
+
+        {/* References — title + source + link */}
+        {uniqueNoveltyReferences.length > 0 && (
+          <div className="border-t border-border px-3.5 pt-2.5 pb-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <BookOpen className="size-3 text-primary" />
+              Retrieved references ({uniqueNoveltyReferences.length})
+            </div>
+            <div className="space-y-1.5">
+              {uniqueNoveltyReferences.map((reference, i) => (
+                <a
+                  key={reference.source + i}
+                  href={referenceHref(reference.source, reference.uri)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2 rounded-lg border border-border bg-muted/25 px-2.5 py-2 hover:border-primary/30 hover:bg-primary-soft/20 transition-colors group"
+                >
+                  <CheckCircle2 className="size-3 shrink-0 mt-0.5 text-primary/50 group-hover:text-primary transition-colors" />
+                  <div className="flex-1 min-w-0">
+                    {reference.title && (
+                      <div className="text-[11px] font-medium text-foreground/85 line-clamp-2 group-hover:text-primary transition-colors leading-snug">
+                        {reference.title}
+                      </div>
+                    )}
+                    <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <ExternalLink className="size-2.5 shrink-0" />
+                      <span className="truncate">{reference.source}</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-success-soft text-success border border-success/30">
-            Grounded
-          </span>
-        </div>
-        <div className="mb-2 text-xs font-medium text-foreground">{plan.novelty.signal}</div>
-        <p className="text-xs text-muted-foreground leading-relaxed mb-4">{plan.novelty.summary}</p>
-        <ul>
-          {plan.novelty.references.map((reference) => (
-            <li key={reference.source}>
-              <a href={referenceHref(reference.source, reference.uri)} target="_blank" rel="noopener noreferrer">
-                {reference.source}
-              </a>
-            </li>
-          ))}
-        </ul>
+        )}
+
+        {/* Source chip row (quick links) */}
+        {uniquePlanSources.length > 0 && (
+          <div className="border-t border-border px-3.5 pt-2 pb-3">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">All plan sources</div>
+            <div className="flex flex-wrap gap-1">
+              {uniquePlanSources.map((source) => (
+                <a
+                  key={source.source}
+                  href={referenceHref(source.source, source.uri)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                  title={source.title}
+                >
+                  <ExternalLink className="size-2.5" />
+                  {source.source}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="rounded-2xl bg-panel border border-border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
+      {/* Operational Budget — collapsible */}
+      <div className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-3.5 py-3 hover:bg-muted/20 transition-colors"
+          onClick={() => setBudgetOpen((v) => !v)}
+        >
           <div className="flex items-center gap-2">
-            <DollarSign className="size-4 text-primary" />
+            <DollarSign className="size-3.5 text-primary" />
             <h3 className="text-sm font-semibold">Operational Budget</h3>
           </div>
-          <span className="text-xs font-semibold text-primary">{formatCurrency(adjustedBudgetAmount(plan.budget.totalUsd, budgetRegion, "total"), budgetRegion)}</span>
-        </div>
-        <div className="mb-3 rounded-xl border border-border bg-muted/20 p-3">
-          <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Operating region</div>
-          <select
-            value={budgetRegion.code}
-            onChange={(event) => onBudgetRegionChange(event.target.value)}
-            className="w-full rounded-lg border border-border bg-panel px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            {budgetRegions.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.label} · {region.currency}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mb-3 grid grid-cols-3 gap-2 text-center text-[11px]">
-          <div className="rounded-xl bg-muted/60 p-3">
-            <div className="text-base font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.reagentsUsd, budgetRegion, "reagents"), budgetRegion)}</div>
-            <div className="text-muted-foreground">Reagents</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-primary">{formatCurrency(adjustedBudgetAmount(plan.budget.totalUsd, budgetRegion, "total"), budgetRegion)}</span>
+            <ChevronDown className={`size-3.5 text-muted-foreground transition-transform duration-200 ${budgetOpen ? "rotate-180" : ""}`} />
           </div>
-          <div className="rounded-xl bg-muted/60 p-3">
-            <div className="text-base font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.equipmentUsd, budgetRegion, "equipment"), budgetRegion)}</div>
-            <div className="text-muted-foreground">Equipment</div>
-          </div>
-          <div className="rounded-xl bg-muted/60 p-3">
-            <div className="text-base font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.savedUsd, budgetRegion, "total"), budgetRegion)}</div>
-            <div className="text-success">Headroom</div>
-          </div>
-        </div>
-        <div className="mb-3 space-y-2">
-          {(plan.budget.lineItems || []).map((item) => (
-            <div key={`${item.category}-${item.label}`} className="flex items-center justify-between rounded-xl border border-border bg-panel px-3 py-2 text-xs">
-              <div>
-                <div className="font-medium text-foreground">{item.label}</div>
-                {item.note && <div className="text-[11px] text-muted-foreground">{item.note}</div>}
-              </div>
-              <div className="font-semibold text-foreground">{formatCurrency(adjustedBudgetAmount(item.amountUsd, budgetRegion, item.category), budgetRegion)}</div>
-            </div>
-          ))}
-        </div>
-        <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
-          <div className="rounded-xl border border-border bg-muted/25 p-3">
-            <div className="text-muted-foreground">Procurement and shipping</div>
-            <div className="mt-1 text-sm font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.shippingUsd || 0, budgetRegion, "shipping"), budgetRegion)}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/25 p-3">
-            <div className="text-muted-foreground">Scientist labor</div>
-            <div className="mt-1 text-sm font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.laborUsd || 0, budgetRegion, "labor"), budgetRegion)}</div>
-          </div>
-        </div>
-        <div className="rounded-xl border border-border bg-primary-soft/60 p-3 text-xs text-foreground/85">
-          <div className="mb-1 flex items-center gap-2 font-medium text-primary">
-            <ShieldCheck className="size-3.5" />
-            Reliability and assumptions
-          </div>
-          <p className="text-muted-foreground leading-relaxed">{plan.budget.reliability || "Planning-grade estimate with operational overhead included."}</p>
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Display values are adjusted for the selected operating region using planning multipliers for procurement, shipping, and scientist labor. They are not a substitute for institution-specific quotes or tax treatment.
-          </p>
-          {plan.budget.assumptions && plan.budget.assumptions.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {plan.budget.assumptions.map((assumption) => (
-                <li key={assumption} className="text-[11px] leading-relaxed text-muted-foreground">
-                  {assumption}
-                </li>
+        </button>
+
+        {budgetOpen && (
+          <div className="border-t border-border px-3.5 pb-3.5 pt-3 space-y-3">
+            {/* Region selector */}
+            <select
+              value={budgetRegion.code}
+              onChange={(event) => onBudgetRegionChange(event.target.value)}
+              className="w-full rounded-lg border border-border bg-muted/20 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {budgetRegions.map((region) => (
+                <option key={region.code} value={region.code}>
+                  {region.label} · {region.currency}
+                </option>
               ))}
-            </ul>
-          )}
-        </div>
+            </select>
+
+            {/* 3 headline numbers */}
+            <div className="grid grid-cols-3 gap-1.5 text-center text-[11px]">
+              <div className="rounded-lg bg-muted/60 p-2">
+                <div className="text-sm font-bold">{formatCurrency(adjustedBudgetAmount(plan.budget.reagentsUsd, budgetRegion, "reagents"), budgetRegion)}</div>
+                <div className="text-muted-foreground">Reagents</div>
+              </div>
+              <div className="rounded-lg bg-muted/60 p-2">
+                <div className="text-sm font-bold">{formatCurrency(adjustedBudgetAmount(plan.budget.equipmentUsd, budgetRegion, "equipment"), budgetRegion)}</div>
+                <div className="text-muted-foreground">Equipment</div>
+              </div>
+              <div className="rounded-lg bg-success-soft p-2">
+                <div className="text-sm font-bold text-success">{formatCurrency(adjustedBudgetAmount(plan.budget.savedUsd, budgetRegion, "total"), budgetRegion)}</div>
+                <div className="text-success/70">Headroom</div>
+              </div>
+            </div>
+
+            {/* Line items */}
+            <div className="space-y-1">
+              {(plan.budget.lineItems || []).map((item) => (
+                <div key={`${item.category}-${item.label}`} className="flex items-center justify-between rounded-lg border border-border bg-panel px-2.5 py-1.5 text-[11px]">
+                  <span className="text-foreground/85">{item.label}</span>
+                  <span className="font-semibold text-foreground ml-2 shrink-0">{formatCurrency(adjustedBudgetAmount(item.amountUsd, budgetRegion, item.category), budgetRegion)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Shipping + Labor */}
+            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+              <div className="rounded-lg border border-border bg-muted/25 p-2">
+                <div className="text-muted-foreground">Shipping</div>
+                <div className="mt-0.5 font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.shippingUsd || 0, budgetRegion, "shipping"), budgetRegion)}</div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/25 p-2">
+                <div className="text-muted-foreground">Labor</div>
+                <div className="mt-0.5 font-semibold">{formatCurrency(adjustedBudgetAmount(plan.budget.laborUsd || 0, budgetRegion, "labor"), budgetRegion)}</div>
+              </div>
+            </div>
+
+            {/* Assumptions accordion */}
+            <div className="rounded-lg border border-primary/20 bg-primary-soft/50 p-2.5 text-[11px]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-left"
+                onClick={() => setAssumptionsOpen((v) => !v)}
+              >
+                <div className="flex items-center gap-1.5 font-semibold text-primary">
+                  <Info className="size-3 shrink-0" />
+                  Pricing assumptions
+                </div>
+                <ChevronDown className={`size-3 shrink-0 text-primary transition-transform duration-200 ${assumptionsOpen ? "rotate-180" : ""}`} />
+              </button>
+              {assumptionsOpen && (
+                <div className="mt-2 space-y-1 border-t border-primary/20 pt-2">
+                  {plan.budget.assumptions?.map((assumption, i) => (
+                    <div key={assumption} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-relaxed">
+                      <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[8px] font-bold text-primary mt-0.5">{i + 1}</span>
+                      {assumption}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      <MoleculeCard plan={plan} />
-
-      <div className="rounded-2xl bg-panel border border-border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
+      {/* Scientist Sanity Check */}
+      <div className="rounded-2xl bg-panel border border-border p-3.5 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold">Scientist Sanity Check</h3>
+            <ShieldCheck className="size-3.5 text-primary" />
+            <h3 className="text-sm font-semibold">Sanity Check</h3>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning-soft text-warning border border-warning/30">
-            Review needed
-          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-soft text-warning border border-warning/30">Review</span>
         </div>
-        <ul className="space-y-2">
+        <ul className="space-y-1">
           {scientistGaps.map((gap) => (
-            <li key={gap} className="rounded-xl border border-border bg-muted/25 p-3 text-xs leading-relaxed text-foreground/85">
-              {gap}
+            <li key={gap} className="flex items-start gap-1.5 rounded-lg border border-border bg-muted/25 px-2.5 py-1.5 text-[10px] text-foreground/80 leading-snug">
+              <span className="shrink-0 text-warning font-bold mt-0.5">›</span>
+              <span className="line-clamp-2">{gap}</span>
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="rounded-2xl bg-panel border border-border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
+      {/* Plan Improvements */}
+      <div className="rounded-2xl bg-panel border border-border p-3.5 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-accent" />
+            <ShieldCheck className="size-3.5 text-accent" />
             <h3 className="text-sm font-semibold">Plan Improvements</h3>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-soft border border-accent/30 text-accent-foreground">
-            Regenerated
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-foreground border border-accent/30">
+            {plan.reviewAdaptations.length} applied
           </span>
         </div>
-        <ul className="space-y-2">
+        <ul className="space-y-1.5">
           {plan.reviewAdaptations.length > 0 ? (
             plan.reviewAdaptations.map((adaptation) => (
-              <li key={`${adaptation.section}-${adaptation.change}`} className="text-xs p-3 rounded-xl border border-border bg-muted/25">
-                <div className="font-medium">{adaptation.section}</div>
-                <p className="text-foreground/80 leading-snug mt-1">{adaptation.change}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">{adaptation.impact}</p>
+              <li key={`${adaptation.section}-${adaptation.change}`} className="rounded-lg border border-border bg-muted/25 px-2.5 py-2 text-[11px]">
+                <div className="font-semibold text-foreground/90">{adaptation.section}</div>
+                <div className="text-foreground/75 leading-snug mt-0.5">{adaptation.change}</div>
+                {adaptation.impact && <div className="text-[10px] text-muted-foreground mt-0.5">{adaptation.impact}</div>}
               </li>
             ))
           ) : (
-            <li className="text-xs text-muted-foreground rounded-xl border border-dashed border-border p-3">
-              No learned adaptations yet. Add a scientist review and regenerate the plan.
+            <li className="text-[11px] text-muted-foreground rounded-lg border border-dashed border-border px-2.5 py-2">
+              Add a scientist review and regenerate to see improvements.
             </li>
           )}
         </ul>
       </div>
 
-      <div className="rounded-2xl bg-panel border border-border p-4 flex-1 flex flex-col shadow-sm">
-        <div className="flex items-center justify-between mb-3">
+      {/* Scientist Review */}
+      <div className="rounded-2xl bg-panel border border-border p-3.5 flex-1 flex flex-col shadow-sm">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <MessageSquareWarning className="size-4 text-accent" />
+            <MessageSquareWarning className="size-3.5 text-accent" />
             <h3 className="text-sm font-semibold">Scientist Review</h3>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-soft border border-accent/30 text-accent-foreground">
-            {reviews.length} notes
-          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-foreground border border-accent/30">{reviews.length} notes</span>
         </div>
-        <ul className="space-y-2 flex-1 overflow-y-auto">
+        <ul className="space-y-1.5 flex-1 overflow-y-auto max-h-40">
           {reviews.map((review) => (
-            <li key={`${review.reviewer}-${review.section}-${review.correction}`} className="text-xs p-3 rounded-xl border border-border bg-muted/25">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="size-5 rounded-full bg-primary-soft text-primary text-[10px] font-semibold flex items-center justify-center">
+            <li key={`${review.reviewer}-${review.section}-${review.correction}`} className="rounded-lg border border-border bg-muted/25 px-2.5 py-2 text-[11px]">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="flex size-4 items-center justify-center rounded-full bg-primary-soft text-primary text-[9px] font-bold">
                   {review.reviewer.charAt(0)}
-                </div>
+                </span>
                 <span className="font-medium">{review.reviewer}</span>
-                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary-soft text-primary">{review.section}</span>
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary-soft text-primary">{review.section}</span>
               </div>
               <p className="text-foreground/80 leading-snug">{review.correction}</p>
             </li>
           ))}
         </ul>
-        <div className="mt-3 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="mt-2 space-y-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <input
               value={reviewer}
               onChange={(event) => setReviewer(event.target.value)}
               placeholder="Reviewer"
-              className="text-xs px-2.5 py-2 rounded-xl border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
             <input
               value={section}
               onChange={(event) => setSection(event.target.value)}
               placeholder="Section"
-              className="text-xs px-2.5 py-2 rounded-xl border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <input
               value={correction}
               onChange={(event) => setCorrection(event.target.value)}
-              placeholder="Add a scientist correction to improve the next plan..."
-              className="flex-1 text-xs px-2.5 py-2 rounded-xl border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="Add a correction to improve the next plan…"
+              className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-border bg-panel focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
             <button
               type="button"
               onClick={() => void submitReview()}
               disabled={saving || correction.trim().length === 0}
-              className="size-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-60"
+              className="size-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-60"
             >
-              <Send className="size-3.5" />
+              <Send className="size-3" />
             </button>
           </div>
         </div>
