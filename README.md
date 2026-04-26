@@ -278,6 +278,6 @@ ai-scientist/
 
 ## Contact
 
-**Team:** [Your team name]
+**Team:** AATAI
 **Challenge:** Hack-Nation × World Bank Youth Summit 2026, Challenge 04
 **Sponsor:** Fulcrum Science
