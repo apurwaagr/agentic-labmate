@@ -17,4 +17,5 @@ class SSEEventType(str, Enum):
 
 def sse_event(event_type: SSEEventType | str, data: dict) -> str:
     """Format a single SSE event string. Caller yields this from an async generator."""
-    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    name = event_type.value if isinstance(event_type, SSEEventType) else str(event_type)
+    return f"event: {name}\ndata: {json.dumps(data)}\n\n"

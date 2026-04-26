@@ -582,6 +582,7 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 const API_TIMEOUT_MS = 4500;
+const PLAN_STREAM_TIMEOUT_MS = 120_000;
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -594,25 +595,148 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): P
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Local API timed out after ${API_TIMEOUT_MS / 1000}s. Make sure the mock API is running on port 8787.`);
+      throw new Error(`Local API timed out after ${API_TIMEOUT_MS / 1000}s. Make sure the backend is running on port 8000.`);
     }
 
-    throw new Error("Local API is unavailable on port 8787. Start it with `npm run api` or use `npm run dev` to launch both services.");
+    throw new Error("Local API is unavailable on port 8000. Start it with `npm run api` or use `npm run dev` to launch both services.");
   } finally {
     window.clearTimeout(timeoutId);
   }
 }
 
-export async function fetchExperimentPlan(hypothesis: string): Promise<{ experiment: ExperimentPlan }> {
-  const response = await fetchWithTimeout("/api/experiments/plan", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ hypothesis }),
-  });
+export type PlanStreamStage =
+  | "qc_complete"
+  | "graph_ready"
+  | "plan_generating"
+  | "plan_complete"
+  | "error";
 
-  return readJson<{ experiment: ExperimentPlan }>(response);
+export type PlanStreamEvent =
+  | { type: "qc_complete"; data: NoveltySignal }
+  | { type: "graph_ready"; data: { workspace_id: string; workspace_slug: string; papers_ingested: number } }
+  | { type: "plan_generating"; data: { message: string } }
+  | { type: "plan_complete"; data: { experiment: ExperimentPlan; plan?: Record<string, unknown> } }
+  | { type: "error"; data: { message: string } };
+
+function parseSseBlock(block: string): { event: string; data: string } | null {
+  let eventName = "message";
+  const dataLines: string[] = [];
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (dataLines.length === 0) return null;
+  return { event: eventName, data: dataLines.join("\n") };
+}
+
+export async function streamExperimentPlan(
+  hypothesis: string,
+  onEvent?: (event: PlanStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<{ experiment: ExperimentPlan }> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), PLAN_STREAM_TIMEOUT_MS);
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("/api/plan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ hypothesis }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    window.clearTimeout(timeoutId);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Plan stream timed out after ${PLAN_STREAM_TIMEOUT_MS / 1000}s.`);
+    }
+    throw new Error("Local API is unavailable on port 8000. Start the FastAPI backend.");
+  }
+
+  if (!response.ok || !response.body) {
+    window.clearTimeout(timeoutId);
+    throw new Error(`Plan stream failed with status ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let experiment: ExperimentPlan | null = null;
+  let streamError: string | null = null;
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const rawBlock = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        const parsed = parseSseBlock(rawBlock);
+        if (!parsed) continue;
+        let payload: unknown;
+        try {
+          payload = JSON.parse(parsed.data);
+        } catch {
+          continue;
+        }
+
+        const event = { type: parsed.event as PlanStreamStage, data: payload as never } as PlanStreamEvent;
+        onEvent?.(event);
+
+        if (event.type === "plan_complete") {
+          experiment = event.data.experiment;
+        } else if (event.type === "error") {
+          streamError = event.data.message || "Plan stream error";
+        }
+      }
+    }
+  } finally {
+    window.clearTimeout(timeoutId);
+    try {
+      reader.releaseLock();
+    } catch {
+      // reader may already be released when stream ended normally.
+    }
+  }
+
+  if (streamError) {
+    throw new Error(streamError);
+  }
+  if (!experiment) {
+    throw new Error("Plan stream ended without a plan_complete event.");
+  }
+  return { experiment };
+}
+
+export async function fetchExperimentPlan(
+  hypothesis: string,
+  onEvent?: (event: PlanStreamEvent) => void,
+): Promise<{ experiment: ExperimentPlan }> {
+  return streamExperimentPlan(hypothesis, onEvent);
 }
 
 export async function fetchChatReply(

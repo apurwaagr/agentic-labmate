@@ -13,6 +13,8 @@ from .schemas import ParsedHypothesis
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
 DEFAULT_PER_PAGE = 10
 REQUEST_TIMEOUT_S = 30
+FAST_PER_PAGE = 6
+FAST_TIMEOUT_S = 8
 
 
 def _configure_network_env() -> None:
@@ -207,7 +209,12 @@ def _novelty_and_references(
     return "not_found", refs
 
 
-def check_literature(parsed_hypothesis: ParsedHypothesis) -> LiteratureQCResult:
+def check_literature(
+    parsed_hypothesis: ParsedHypothesis,
+    *,
+    per_page: int = DEFAULT_PER_PAGE,
+    timeout_s: int = REQUEST_TIMEOUT_S,
+) -> LiteratureQCResult:
     h = parsed_hypothesis
     query_parts = [h.domain, h.subject, h.intervention, h.outcome_metric]
     search_query = " ".join(p.strip() for p in query_parts if p and str(p).strip())
@@ -219,8 +226,8 @@ def check_literature(parsed_hypothesis: ParsedHypothesis) -> LiteratureQCResult:
             total_results=0,
         )
 
-    params = _build_openalex_params(search_query, DEFAULT_PER_PAGE)
-    resp = requests.get(OPENALEX_WORKS_URL, params=params, timeout=REQUEST_TIMEOUT_S)
+    params = _build_openalex_params(search_query, max(1, per_page))
+    resp = requests.get(OPENALEX_WORKS_URL, params=params, timeout=max(1, timeout_s))
     resp.raise_for_status()
     data = resp.json()
     total = int((data.get("meta") or {}).get("count", 0) or 0)

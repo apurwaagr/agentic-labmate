@@ -1,0 +1,59 @@
+{
+  "summary": {
+    "runs": 3,
+    "qc_avg_s": 2.129,
+    "plan_avg_s": 127.131,
+    "completion_rate": 1.0,
+    "skipped_runs": 0
+  },
+  "results": [
+    {
+      "run": 1,
+      "events": [
+        "qc_complete",
+        "graph_ready",
+        "plan_generating",
+        "plan_complete"
+      ],
+      "timings_s": {
+        "qc_complete": 2.188,
+        "graph_ready": 5.63,
+        "plan_generating": 5.63,
+        "plan_complete": 135.348
+      },
+      "success": true
+    },
+    {
+      "run": 2,
+      "events": [
+        "qc_complete",
+        "graph_ready",
+        "plan_generating",
+        "plan_complete"
+      ],
+      "timings_s": {
+        "qc_complete": 2.173,
+        "graph_ready": 2.688,
+        "plan_generating": 2.688,
+        "plan_complete": 133.432
+      },
+      "success": true
+    },
+    {
+      "run": 3,
+      "events": [
+        "qc_complete",
+        "graph_ready",
+        "plan_generating",
+        "plan_complete"
+      ],
+      "timings_s": {
+        "qc_complete": 2.026,
+        "graph_ready": 2.52,
+        "plan_generating": 2.52,
+        "plan_complete": 112.612
+      },
+      "success": true
+    }
+  ]
+}
