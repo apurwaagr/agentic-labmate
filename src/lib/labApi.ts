@@ -157,6 +157,14 @@ export type ChatReply = {
   mode?: "grounded" | "fallback";
 };
 
+export type CompoundResolution = {
+  query: string;
+  resolvedName: string | null;
+  pubchemCid: number | null;
+  imageUrl: string | null;
+  usedAi: boolean;
+};
+
 export const budgetRegions: BudgetRegion[] = [
   {
     code: "US",
@@ -646,13 +654,12 @@ export async function fetchChatReply(
   question: string,
   plan?: ExperimentPlan,
   reviews?: ReviewRecord[],
-  apiKey?: string,
 ): Promise<ChatReply> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (apiKey) headers["x-gemini-api-key"] = apiKey;
   const response = await fetchWithTimeout("/api/chat", {
     method: "POST",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({
       experimentId,
       hypothesis,
@@ -673,6 +680,11 @@ export async function fetchChatReply(
   });
 
   return readJson<ChatReply>(response);
+}
+
+export async function fetchCompoundResolution(name: string): Promise<CompoundResolution> {
+  const response = await fetchWithTimeout(`/api/compound/resolve?name=${encodeURIComponent(name)}`);
+  return readJson<CompoundResolution>(response);
 }
 
 export async function fetchReviews(experimentId: string): Promise<ReviewRecord[]> {

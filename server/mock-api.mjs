@@ -51,6 +51,12 @@ const apiContracts = [
     purpose: "Answer grounded scientist questions using plan context, sources, and review memory.",
   },
   {
+    name: "Compound Resolve",
+    method: "GET",
+    path: "/api/compound/resolve",
+    purpose: "Resolve compound names into PubChem CIDs and image URLs, with Gemini-assisted canonicalization fallback.",
+  },
+  {
     name: "Review Store",
     method: "GET/POST",
     path: "/api/reviews",
@@ -371,10 +377,8 @@ async function callGemini({
   prompt,
   schema,
   grounded = false,
-  apiKey,
 }) {
-  const effectiveKey = apiKey || geminiApiKey;
-  if (!effectiveKey) {
+  if (!geminiApiKey) {
     throw new Error("Missing GEMINI_API_KEY");
   }
 
@@ -383,7 +387,7 @@ async function callGemini({
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${effectiveKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: {
@@ -429,6 +433,119 @@ async function callGemini({
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function resolvePubChemCidByName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const requestUrl = `${pubchemApiUrl}/compound/name/${encodeURIComponent(trimmed)}/cids/JSON`;
+
+  try {
+    const response = await fetch(requestUrl, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const json = await response.json();
+    const cid = json?.IdentifierList?.CID?.[0];
+    return Number.isFinite(cid) ? Number(cid) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function aiCompoundCandidates(name) {
+  if (!geminiApiKey) {
+    return [];
+  }
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      canonicalName: { type: "STRING" },
+      aliases: {
+        type: "ARRAY",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["canonicalName", "aliases"],
+  };
+
+  const prompt = `
+Given a possibly messy lab reagent name, return:
+1) the most likely canonical chemical compound name
+2) up to 4 search aliases that may resolve in PubChem
+
+Input name:
+${name}
+
+Return JSON only.
+`;
+
+  try {
+    const { data } = await callGemini({ prompt, schema, grounded: false });
+    const candidates = [data.canonicalName, ...(Array.isArray(data.aliases) ? data.aliases : [])]
+      .map((entry) => (entry || "").trim())
+      .filter(Boolean);
+
+    return [...new Set(candidates)].slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+async function resolveCompoundVisual(name) {
+  const query = (name || "").trim();
+  if (!query) {
+    return {
+      query,
+      resolvedName: null,
+      pubchemCid: null,
+      imageUrl: null,
+      usedAi: false,
+    };
+  }
+
+  const directCid = await resolvePubChemCidByName(query);
+  if (directCid) {
+    return {
+      query,
+      resolvedName: query,
+      pubchemCid: directCid,
+      imageUrl: `${pubchemApiUrl}/compound/cid/${directCid}/PNG?image_size=large`,
+      usedAi: false,
+    };
+  }
+
+  const candidates = await aiCompoundCandidates(query);
+  for (const candidate of candidates) {
+    const candidateCid = await resolvePubChemCidByName(candidate);
+    if (candidateCid) {
+      return {
+        query,
+        resolvedName: candidate,
+        pubchemCid: candidateCid,
+        imageUrl: `${pubchemApiUrl}/compound/cid/${candidateCid}/PNG?image_size=large`,
+        usedAi: true,
+      };
+    }
+  }
+
+  return {
+    query,
+    resolvedName: candidates[0] || null,
+    pubchemCid: null,
+    imageUrl: null,
+    usedAi: candidates.length > 0,
+  };
 }
 
 function hypothesisParseFallback(hypothesis) {
@@ -2697,7 +2814,7 @@ function chatFallbackAnswer(question, experiment, reviews) {
   return `Start with the earliest decision gate: ${firstGate} After that, verify the most expensive or slowest material dependency and fold in the latest scientist correction before ordering.`;
 }
 
-async function chatReply(question, hypothesis, reviews, planContext, apiKey) {
+async function chatReply(question, hypothesis, reviews, planContext) {
   const plan = planContext
     ? {
         experiment: {
@@ -2714,7 +2831,7 @@ async function chatReply(question, hypothesis, reviews, planContext, apiKey) {
       }
     : await generatePlan(hypothesis);
 
-  if (!geminiApiKey && !apiKey) {
+  if (!geminiApiKey) {
     return {
       answer: chatFallbackAnswer(question, plan.experiment, reviews),
       citations: plan.experiment.sources.slice(0, 2).map((source) => ({
@@ -2773,7 +2890,7 @@ ${JSON.stringify(reviews)}
 `;
 
   try {
-    const { data, references } = await callGemini({ prompt, schema, grounded: true, apiKey });
+    const { data, references } = await callGemini({ prompt, schema, grounded: true });
     return {
       answer: data.answer,
       citations: references.slice(0, 3).map((reference) => ({
@@ -2857,12 +2974,21 @@ createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/chat") {
       const body = await readBody(request);
-      const requestApiKey = request.headers.get("x-gemini-api-key") || undefined;
       const hypothesis = body.hypothesis || requireHypothesis();
       const experimentId = body.experimentId || detectDomain(hypothesis).id;
       const requestReviews = Array.isArray(body.reviews) ? body.reviews : [];
       const reviews = requestReviews.length > 0 ? requestReviews : relatedReviewsForHypothesis(hypothesis, experimentId);
-      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext, requestApiKey));
+      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/compound/resolve") {
+      const name = (url.searchParams.get("name") || "").trim();
+      if (!name) {
+        sendJson(response, 400, { error: "Missing query parameter: name" });
+        return;
+      }
+      sendJson(response, 200, await resolveCompoundVisual(name));
       return;
     }
 
