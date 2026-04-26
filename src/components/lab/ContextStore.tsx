@@ -216,11 +216,11 @@ export function ContextStore({
           </div>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-soft text-warning border border-warning/30">Review</span>
         </div>
-        <ul className="space-y-1.5">
+        <ul className="space-y-1">
           {scientistGaps.map((gap) => (
-            <li key={gap} className="flex items-start gap-2 rounded-lg border border-border bg-muted/25 px-2.5 py-1.5 text-[11px] text-foreground/85">
-              <span className="mt-0.5 shrink-0 text-warning">›</span>
-              {gap}
+            <li key={gap} className="flex items-start gap-1.5 rounded-lg border border-border bg-muted/25 px-2.5 py-1.5 text-[10px] text-foreground/80 leading-snug">
+              <span className="shrink-0 text-warning font-bold mt-0.5">›</span>
+              <span className="line-clamp-2">{gap}</span>
             </li>
           ))}
         </ul>

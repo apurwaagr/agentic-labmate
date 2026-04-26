@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Atom, ExternalLink, FlaskConical, Orbit, Plus, RotateCw, Info, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Atom, ChevronDown, ExternalLink, FlaskConical, Orbit, Plus, RotateCw, Info, CheckCircle2, ShieldCheck } from "lucide-react";
 import { moleculeForPlan, type ExperimentPlan, type MoleculeModel } from "@/lib/labApi";
 
 const elementColor: Record<string, string> = {
@@ -567,129 +567,104 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
       </div>
 
       {/* ── Protocol & experimental context ── */}
-      <div className="grid gap-3 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="space-y-3">
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
-              <FlaskConical className="size-3.5 text-primary" />
-              Experimental implication
-            </div>
-            <p className="text-xs leading-relaxed text-muted-foreground">{model.note}</p>
+      <div className="space-y-2">
+        {/* Note + gates in one compact row */}
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground flex-1 min-w-0">
+            <FlaskConical className="size-3 shrink-0 text-primary" />
+            <span className="line-clamp-2">{model.note}</span>
             {protocolContext.hasProtocolSource && (
-              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                Anchored to protocol: <span className="font-medium text-foreground/75">{protocolContext.label}</span>
-              </p>
+              <span className="ml-1 text-[10px] font-medium text-primary/70">· {protocolContext.label}</span>
             )}
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              {model.editableHint || "Drag atoms on the canvas or tune their coordinates to test alternate structural arrangements during planning."}
-            </p>
-          </div>
-
-          {/* Validation gate display linked to molecules */}
-          {plan.validation && plan.validation.decisionGates && plan.validation.decisionGates.length > 0 && (
-            <div className="rounded-xl border border-primary/20 bg-primary-soft/40 p-3">
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-primary">
-                <ShieldCheck className="size-3.5" />
-                Compound-level gates
-              </div>
-              <ul className="space-y-1.5">
-                {plan.validation.decisionGates.slice(0, 3).map((gate) => (
-                  <li key={gate} className="flex items-start gap-2 text-[11px] leading-relaxed text-foreground/80">
-                    <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-success" />
-                    {gate}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <div className="mb-2 text-[11px] font-semibold text-foreground">Scientist annotation</div>
-            <textarea
-              value={annotation}
-              onChange={(event) => setAnnotation(event.target.value)}
-              placeholder="Record how this structural view changes hypothesis, control choice, assay readout, or procurement decision..."
-              className="min-h-20 w-full rounded-lg border border-border bg-panel px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
           </div>
         </div>
 
-        <div className="space-y-3">
-          {selectedAtom && (
-            <div className="rounded-xl border border-border bg-muted/20 p-3 text-[11px]">
-              <div className="mb-2 font-semibold text-foreground">Selected: {selectedAtom.id} ({selectedAtom.element})</div>
-              <div className="grid grid-cols-2 gap-2">
-                <label>
-                  <div className="mb-1 text-muted-foreground">Element</div>
-                  <input
-                    value={selectedAtom.element}
-                    onChange={(event) => updateAtom(selectedAtom.id, { element: event.target.value.toUpperCase().slice(0, 2) })}
-                    className="w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </label>
-                <label>
-                  <div className="mb-1 text-muted-foreground">Depth (Z)</div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={selectedAtom.z}
-                    onChange={(event) => updateAtom(selectedAtom.id, { z: Number(event.target.value) })}
-                    className="w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </label>
-                <label>
-                  <div className="mb-1 text-muted-foreground">X</div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={selectedAtom.x}
-                    onChange={(event) => updateAtom(selectedAtom.id, { x: Number(event.target.value) })}
-                    className="w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </label>
-                <label>
-                  <div className="mb-1 text-muted-foreground">Y</div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={selectedAtom.y}
-                    onChange={(event) => updateAtom(selectedAtom.id, { y: Number(event.target.value) })}
-                    className="w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </label>
-              </div>
-            </div>
-          )}
+        {/* Compound gates — keyword chips only */}
+        {plan.validation?.decisionGates && plan.validation.decisionGates.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-primary mr-1">
+              <ShieldCheck className="size-3" />Gates:
+            </span>
+            {plan.validation.decisionGates.slice(0, 3).map((gate) => (
+              <span key={gate} title={gate} className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success-soft px-2 py-0.5 text-[10px] text-success">
+                <CheckCircle2 className="size-2.5 shrink-0" />
+                {gate.split(" ").slice(0, 5).join(" ")}…
+              </span>
+            ))}
+          </div>
+        )}
 
-          <div className="rounded-xl border border-border bg-muted/20 p-3 text-[11px]">
-            <div className="mb-2 font-semibold text-foreground">Atom coordinates</div>
-            <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-panel">
-              <table className="w-full text-left text-[11px]">
-                <thead className="sticky top-0 bg-panel">
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="px-2 py-1.5">Atom</th>
-                    <th className="px-2 py-1.5">El</th>
-                    <th className="px-2 py-1.5">X</th>
-                    <th className="px-2 py-1.5">Y</th>
-                    <th className="px-2 py-1.5">Z</th>
+        {/* Annotation — compact */}
+        <textarea
+          value={annotation}
+          onChange={(event) => setAnnotation(event.target.value)}
+          placeholder="Scientist note…"
+          rows={2}
+          className="w-full rounded-lg border border-border bg-panel px-2.5 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+        />
+      </div>
+
+      {/* ── Atom detail ── */}
+      <div className="space-y-2">
+        {selectedAtom && (
+          <div className="rounded-xl border border-primary/25 bg-primary-soft/30 p-2.5 text-[11px]">
+            <div className="mb-2 flex items-center gap-1.5 font-semibold text-primary">
+              <Atom className="size-3" /> {selectedAtom.id} · {selectedAtom.element}
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(["element", "x", "y", "z"] as const).map((field) => (
+                <label key={field}>
+                  <div className="mb-0.5 text-[10px] uppercase text-muted-foreground">{field}</div>
+                  <input
+                    type={field === "element" ? "text" : "number"}
+                    step="0.1"
+                    value={selectedAtom[field]}
+                    onChange={(event) => updateAtom(selectedAtom.id, {
+                      [field]: field === "element"
+                        ? event.target.value.toUpperCase().slice(0, 2)
+                        : Number(event.target.value),
+                    })}
+                    className="w-full rounded-md border border-border bg-panel px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/30"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Coords table — collapsed by default */}
+        <details className="group rounded-xl border border-border bg-muted/20 px-2.5 py-1.5">
+          <summary className="cursor-pointer select-none text-[10px] font-semibold uppercase tracking-wide text-muted-foreground list-none flex items-center gap-1">
+            <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
+            Atom coordinates ({model.atoms.length})
+          </summary>
+          <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-panel">
+            <table className="w-full text-left text-[11px]">
+              <thead className="sticky top-0 bg-panel">
+                <tr className="border-b border-border text-muted-foreground">
+                  <th className="px-2 py-1.5">Atom</th>
+                  <th className="px-2 py-1.5">El</th>
+                  <th className="px-2 py-1.5">X</th>
+                  <th className="px-2 py-1.5">Y</th>
+                  <th className="px-2 py-1.5">Z</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.atoms.map((atom) => (
+                  <tr key={atom.id} className="border-b border-border/60 last:border-b-0 hover:bg-muted/20">
+                    <td className="px-2 py-1 font-medium">{atom.id}</td>
+                    <td className="px-2 py-1">{atom.element}</td>
+                    <td className="px-2 py-1">{atom.x.toFixed(1)}</td>
+                    <td className="px-2 py-1">{atom.y.toFixed(1)}</td>
+                    <td className="px-2 py-1">{atom.z.toFixed(1)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {model.atoms.map((atom) => (
-                    <tr key={atom.id} className="border-b border-border/60 last:border-b-0 hover:bg-muted/20">
-                      <td className="px-2 py-1 font-medium">{atom.id}</td>
-                      <td className="px-2 py-1">{atom.element}</td>
-                      <td className="px-2 py-1">{atom.x.toFixed(1)}</td>
-                      <td className="px-2 py-1">{atom.y.toFixed(1)}</td>
-                      <td className="px-2 py-1">{atom.z.toFixed(1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </details>
       </div>
     </section>
   );
 }
+
