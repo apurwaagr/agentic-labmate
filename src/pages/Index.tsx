@@ -829,7 +829,7 @@ const Index = () => {
                         <button
                           type="button"
                           onClick={loadReferenceProject}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-5 py-3 text-sm font-medium text-accent-foreground shadow-sm hover:bg-accent-soft/70"
+                          className="inline-flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-5 py-3 text-sm font-medium text-accent shadow-sm hover:bg-accent hover:text-accent-foreground"
                         >
                           Load full reference project
                         </button>
@@ -881,7 +881,7 @@ const Index = () => {
                             {activeProject.domain || "Custom"}
                           </span>
                           {activeProject.novelty && (
-                            <span className="rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-[10px] font-medium text-accent-foreground">
+                            <span className="rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-[10px] font-medium text-accent">
                               ✦ {activeProject.novelty}
                             </span>
                           )}
@@ -900,7 +900,7 @@ const Index = () => {
                         <div className="flex gap-2 shrink-0">
                           {[
                             { label: "Confidence", value: activePlan.metrics.confidence, icon: <ShieldCheck className="size-3" />, cls: "border-primary/20 bg-primary-soft text-primary" },
-                            { label: "Novelty",    value: activePlan.metrics.novelty,    icon: <Sparkles className="size-3" />,    cls: "border-accent/20 bg-accent-soft text-accent-foreground" },
+                            { label: "Novelty",    value: activePlan.metrics.novelty,    icon: <Sparkles className="size-3" />,    cls: "border-accent/20 bg-accent-soft text-accent" },
                             { label: "Sustain.",   value: activePlan.metrics.sustainability, icon: <Leaf className="size-3" />,    cls: "border-success/20 bg-success-soft text-success" },
                           ].map(({ label, value, icon, cls }) => (
                             <div key={label} className={`flex flex-col items-center rounded-xl border px-3 py-2 text-center ${cls}`}>

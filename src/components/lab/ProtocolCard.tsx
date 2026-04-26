@@ -131,7 +131,7 @@ export function ProtocolCard({ steps, materials = [], planId }: { steps: Protoco
               {doneCount}/{steps.length} done
             </span>
             {inProgressCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-accent-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-accent">
                 {inProgressCount} in progress
               </span>
             )}
