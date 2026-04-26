@@ -214,6 +214,14 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
                       className="h-28 w-28 rounded-xl border border-border bg-white object-contain shadow-sm hover:shadow-md transition-shadow"
                     />
                   </a>
+                ) : targetResolution?.imageUrl ? (
+                  <a href={targetResolution.imageUrl} target="_blank" rel="noreferrer" className="shrink-0">
+                    <img
+                      src={targetResolution.imageUrl}
+                      alt={`${plan.targetCompound.name} structure`}
+                      className="h-28 w-28 rounded-xl border border-border bg-white object-contain shadow-sm hover:shadow-md transition-shadow"
+                    />
+                  </a>
                 ) : (
                   <div className="shrink-0 flex h-28 w-28 items-center justify-center rounded-xl border border-dashed border-accent/30 bg-muted/20">
                     <FlaskConical className="size-8 text-accent/40" />
@@ -294,6 +302,24 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
                     <div className="mt-1 flex items-center justify-between gap-1">
                       {material.molecularWeight ? <span className="text-[10px] text-muted-foreground">{material.molecularWeight.toFixed(0)} g/mol</span> : <span />}
                       <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">CID {cid} <ExternalLink className="size-2.5" /></span>
+                    </div>
+                  </a>
+                ) : resolved?.imageUrl ? (
+                  <a
+                    key={`${material.name}-image`}
+                    href={resolved.imageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 rounded-xl border border-border bg-panel p-2.5 w-[148px] hover:border-primary/40 hover:bg-primary-soft/20 hover:shadow-sm transition-all group"
+                  >
+                    <img
+                      src={resolved.imageUrl}
+                      alt={`${material.name} structure`}
+                      className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain group-hover:border-primary/30 transition-colors"
+                    />
+                    <div className="text-[11px] font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{material.name}</div>
+                    <div className="mt-1 flex items-center justify-end gap-1">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">Structure <ExternalLink className="size-2.5" /></span>
                     </div>
                   </a>
                 ) : (

@@ -462,6 +462,63 @@ async function resolvePubChemCidByName(name) {
   }
 }
 
+function normalizeCompoundQuery(name) {
+  return (name || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:mM|uM|nM|M|mg\/?mL|g\/?L|%|w\/?v|v\/?v)\b/gi, " ")
+    .replace(/\b(?:solution|buffer|media|medium|reagent grade|catalog|cat\.?\s*no\.?|lot\s*no\.?)\b/gi, " ")
+    .replace(/[,:;]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function likelyNotSingleCompound(name) {
+  const label = (name || "").toLowerCase();
+  return /(buffer|medium|media|serum|cells|cell line|broth|agar|antibody cocktail|mix|mixture|kit)/.test(label);
+}
+
+function tokenSimilarity(a, b) {
+  const aTokens = new Set((a || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+  const bTokens = new Set((b || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+
+  if (aTokens.size === 0 || bTokens.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function resolutionCandidates(query) {
+  const normalized = normalizeCompoundQuery(query);
+  const firstSegment = normalized.split(/[\/+]/)[0].trim();
+  const beforeComma = normalized.split(",")[0].trim();
+
+  return [...new Set([query.trim(), normalized, firstSegment, beforeComma].filter(Boolean))];
+}
+
+async function resolvePubChemImageByName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const imageUrl = `${pubchemApiUrl}/compound/name/${encodeURIComponent(trimmed)}/PNG?image_size=large`;
+
+  try {
+    const response = await fetch(imageUrl);
+    return response.ok ? imageUrl : null;
+  } catch {
+    return null;
+  }
+}
+
 async function aiCompoundCandidates(name) {
   if (!geminiApiKey) {
     return [];
@@ -514,19 +571,36 @@ async function resolveCompoundVisual(name) {
     };
   }
 
-  const directCid = await resolvePubChemCidByName(query);
-  if (directCid) {
+  if (likelyNotSingleCompound(query)) {
     return {
       query,
-      resolvedName: query,
-      pubchemCid: directCid,
-      imageUrl: `${pubchemApiUrl}/compound/cid/${directCid}/PNG?image_size=large`,
+      resolvedName: null,
+      pubchemCid: null,
+      imageUrl: null,
       usedAi: false,
     };
   }
 
+  const directCandidates = resolutionCandidates(query);
+  for (const candidate of directCandidates) {
+    const directCid = await resolvePubChemCidByName(candidate);
+    if (directCid) {
+      return {
+        query,
+        resolvedName: candidate,
+        pubchemCid: directCid,
+        imageUrl: `${pubchemApiUrl}/compound/cid/${directCid}/PNG?image_size=large`,
+        usedAi: false,
+      };
+    }
+  }
+
   const candidates = await aiCompoundCandidates(query);
   for (const candidate of candidates) {
+    if (tokenSimilarity(query, candidate) < 0.45) {
+      continue;
+    }
+
     const candidateCid = await resolvePubChemCidByName(candidate);
     if (candidateCid) {
       return {
@@ -535,6 +609,19 @@ async function resolveCompoundVisual(name) {
         pubchemCid: candidateCid,
         imageUrl: `${pubchemApiUrl}/compound/cid/${candidateCid}/PNG?image_size=large`,
         usedAi: true,
+      };
+    }
+  }
+
+  for (const candidate of [...directCandidates, ...candidates]) {
+    const imageUrl = await resolvePubChemImageByName(candidate);
+    if (imageUrl) {
+      return {
+        query,
+        resolvedName: candidate,
+        pubchemCid: null,
+        imageUrl,
+        usedAi: candidates.includes(candidate),
       };
     }
   }

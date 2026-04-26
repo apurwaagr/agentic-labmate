@@ -74,6 +74,29 @@ export function ContextStore({
   }
 
   const scientistGaps = scientistGapsForPlan(plan);
+  const removedSummaryLine = "Related literature describes adjacent interventions and outcome metrics, but the exact combination in this hypothesis has not been fully replicated. Review the retrieved references to identify the closest prior art.";
+  const noveltySummary = (plan.novelty.summary || "").replace(removedSummaryLine, "").trim();
+  const uniqueNoveltyReferences = plan.novelty.references.filter((reference, index, all) => {
+    const key = `${(reference.uri || "").trim().toLowerCase()}|${reference.source.trim().toLowerCase()}|${(reference.title || "").trim().toLowerCase()}`;
+    return all.findIndex((candidate) => {
+      const candidateKey = `${(candidate.uri || "").trim().toLowerCase()}|${candidate.source.trim().toLowerCase()}|${(candidate.title || "").trim().toLowerCase()}`;
+      return candidateKey === key;
+    }) === index;
+  });
+  const noveltyReferenceKeys = new Set(
+    uniqueNoveltyReferences.map((reference) => `${(reference.uri || "").trim().toLowerCase()}|${reference.source.trim().toLowerCase()}`),
+  );
+  const uniquePlanSources = (plan.sources || []).filter((source, index, all) => {
+    const key = `${(source.uri || "").trim().toLowerCase()}|${source.source.trim().toLowerCase()}`;
+    if (noveltyReferenceKeys.has(key)) {
+      return false;
+    }
+
+    return all.findIndex((candidate) => {
+      const candidateKey = `${(candidate.uri || "").trim().toLowerCase()}|${candidate.source.trim().toLowerCase()}`;
+      return candidateKey === key;
+    }) === index;
+  });
 
   return (
     <aside className="w-full xl:w-[360px] shrink-0 flex flex-col gap-3 p-3 border-l border-border bg-surface overflow-y-auto h-full">
@@ -96,7 +119,6 @@ export function ContextStore({
             : isSimilar
             ? "border-warning/30 bg-warning-soft text-warning"
             : "border-success/30 bg-success-soft text-success";
-          const score = isExact ? 92 : isSimilar ? 54 : 18;
           return (
             <>
               <div className={`flex items-center gap-2.5 px-3.5 py-3 ${headerCls}`}>
@@ -105,32 +127,25 @@ export function ContextStore({
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-0.5">Novelty Signal</div>
                   <div className="flex items-center gap-2">
                     <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge}`}>{sig}</span>
-                    <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${isExact ? "bg-danger" : isSimilar ? "bg-warning" : "bg-success"}`}
-                        style={{ width: `${score}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{score}%</span>
                   </div>
                 </div>
               </div>
               <div className="px-3.5 pt-2.5 pb-1">
-                <p className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{plan.novelty.summary}</p>
+                {noveltySummary && <p className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{noveltySummary}</p>}
               </div>
             </>
           );
         })()}
 
         {/* References — title + source + link */}
-        {plan.novelty.references.length > 0 && (
+        {uniqueNoveltyReferences.length > 0 && (
           <div className="border-t border-border px-3.5 pt-2.5 pb-3">
             <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               <BookOpen className="size-3 text-primary" />
-              Retrieved references ({plan.novelty.references.length})
+              Retrieved references ({uniqueNoveltyReferences.length})
             </div>
             <div className="space-y-1.5">
-              {plan.novelty.references.map((reference, i) => (
+              {uniqueNoveltyReferences.map((reference, i) => (
                 <a
                   key={reference.source + i}
                   href={referenceHref(reference.source, reference.uri)}
@@ -157,11 +172,11 @@ export function ContextStore({
         )}
 
         {/* Source chip row (quick links) */}
-        {plan.sources && plan.sources.length > 0 && (
+        {uniquePlanSources.length > 0 && (
           <div className="border-t border-border px-3.5 pt-2 pb-3">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">All plan sources</div>
             <div className="flex flex-wrap gap-1">
-              {plan.sources.map((source) => (
+              {uniquePlanSources.map((source) => (
                 <a
                   key={source.source}
                   href={referenceHref(source.source, source.uri)}

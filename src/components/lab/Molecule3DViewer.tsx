@@ -41,6 +41,7 @@ function ensure3DmolLoaded() {
 export function Molecule3DViewer({ cid, className }: { cid: number; className?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [used3DConformer, setUsed3DConformer] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -48,17 +49,30 @@ export function Molecule3DViewer({ cid, className }: { cid: number; className?: 
     async function render3D() {
       try {
         setStatus("loading");
+        setUsed3DConformer(false);
         await ensure3DmolLoaded();
 
-        const response = await fetch(
+        const urls = [
           `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF?record_type=3d`,
-        );
+          `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/SDF`,
+        ];
 
-        if (!response.ok) {
-          throw new Error("3D conformer not available");
+        let sdf = "";
+        let got3D = false;
+        for (const [index, url] of urls.entries()) {
+          const response = await fetch(url);
+          if (!response.ok) {
+            continue;
+          }
+          sdf = await response.text();
+          got3D = index === 0;
+          break;
         }
 
-        const sdf = await response.text();
+        if (!sdf) {
+          throw new Error("No model available");
+        }
+
         if (!active || !hostRef.current || !window.$3Dmol) {
           return;
         }
@@ -66,10 +80,11 @@ export function Molecule3DViewer({ cid, className }: { cid: number; className?: 
         const viewer = window.$3Dmol.createViewer(hostRef.current, { backgroundColor: "white" });
         viewer.clear();
         viewer.addModel(sdf, "sdf");
-        viewer.setStyle({}, { stick: { radius: 0.16 }, sphere: { scale: 0.22 } });
+        viewer.setStyle({}, { stick: { radius: 0.18 }, sphere: { scale: 0.3 } });
         viewer.zoomTo();
-        viewer.spin(true);
+        viewer.spin(false);
         viewer.render();
+        setUsed3DConformer(got3D);
         setStatus("ready");
       } catch {
         if (active) {
@@ -90,7 +105,13 @@ export function Molecule3DViewer({ cid, className }: { cid: number; className?: 
       <div ref={hostRef} className="h-44 w-full rounded-xl border border-border bg-white" />
       {status === "loading" && <div className="mt-1 text-[10px] text-muted-foreground">Loading 3D structure...</div>}
       {status === "error" && <div className="mt-1 text-[10px] text-warning">3D structure is not available for this compound.</div>}
-      {status === "ready" && <div className="mt-1 text-[10px] text-muted-foreground">Interactive model loaded. Drag to rotate and scroll to zoom.</div>}
+      {status === "ready" && (
+        <div className="mt-1 text-[10px] text-muted-foreground">
+          {used3DConformer
+            ? "Interactive 3D conformer loaded. Drag to rotate and scroll to zoom."
+            : "Interactive model loaded from available structural record (full 3D conformer was not provided)."}
+        </div>
+      )}
     </div>
   );
 }
