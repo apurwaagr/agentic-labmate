@@ -115,6 +115,16 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(circle at top left, hsl(var(--primary-soft)) 0%, transparent 28%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(var(--surface)));
+    @apply bg-background text-foreground antialiased;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, monospace;
   }
 }
