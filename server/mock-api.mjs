@@ -637,11 +637,42 @@ async function resolveCompoundVisual(name) {
 
 function hypothesisParseFallback(hypothesis) {
   const domain = detectDomain(hypothesis);
+  const lower = hypothesis.toLowerCase();
+
+  if (/(gold nanoparticle|nanoparticle|aunp|turkevich|trisodium citrate|chloroauric|haucl4|citrate-to-gold)/.test(lower)) {
+    return {
+      hypothesis,
+      intervention: "Turkevich synthesis using trisodium citrate as reducing/capping agent",
+      subject: "Aqueous HAuCl4 solution under reflux",
+      outcome: "Gold nanoparticle size distribution and colloidal stability",
+      threshold: "Mean particle diameter 15-20 nm with PDI <= 0.20",
+      mechanism: "Citrate-to-gold ratio controls nucleation burst and subsequent growth kinetics",
+      control: "Fixed citrate-to-gold baseline ratio (e.g., 3:1 molar) with identical temperature and mixing",
+      domain: "Nanomaterials Synthesis",
+    };
+  }
+
+  const inferredIntervention =
+    /(crispr|cas9|grna|sgRNA)/.test(lower)
+      ? "CRISPR-Cas9 perturbation with target-specific guide RNA"
+      : /(inhibitor|agonist|compound|drug|treatment)/.test(lower)
+        ? "Primary treatment condition extracted from hypothesis"
+        : "Primary intervention extracted from hypothesis";
+
+  const inferredOutcome =
+    /(viability|survival)/.test(lower)
+      ? "Cell viability change vs matched control"
+      : /(expression|rna|transcript|protein)/.test(lower)
+        ? "Target molecular readout change vs matched control"
+        : /(size|diameter|nanometer|nm)/.test(lower)
+          ? "Particle size and distribution vs target threshold"
+          : "Primary measured outcome";
+
   return {
     hypothesis,
-    intervention: "Primary intervention extracted from hypothesis",
+    intervention: inferredIntervention,
     subject: domain.project,
-    outcome: "Primary measured outcome",
+    outcome: inferredOutcome,
     threshold: "See hypothesis threshold",
     mechanism: "Mechanistic explanation stated or implied by the hypothesis",
     control: "Matched control arm without the intervention",
@@ -1147,6 +1178,114 @@ function domainProtocolSpine(domainKey, parsed, materials) {
   const mat = (rx) => materials.find((m) => rx.test(m.name.toLowerCase()))?.name || null;
 
   const d = domainKey.toLowerCase();
+  const hypothesisText = (parsed.hypothesis || "").toLowerCase();
+  const contextText = [
+    parsed.intervention || "",
+    parsed.subject || "",
+    parsed.outcome || "",
+    parsed.mechanism || "",
+    ...materials.map((m) => m.name),
+    hypothesisText,
+  ].join(" ").toLowerCase();
+
+  /* ── NANOPARTICLE / TURKEVICH SYNTHESIS ── */
+  if (/(gold nanoparticle|nanoparticle|aunp|turkevich|trisodium citrate|chloroauric|haucl4|citrate-to-gold|uv-vis.*520)/.test(contextText)) {
+    const goldPrecursor = mat(/(haucl4|chloroauric|gold chloride|tetrachloroaurate)/) || "HAuCl4·3H2O";
+    const citrate = mat(/(trisodium citrate|sodium citrate|citrate)/) || "trisodium citrate";
+    const reducer = mat(/(ascorbic|borohydride|nabh4|reducing)/) || citrate;
+    return [
+      {
+        title: "Define target size window and experimental matrix",
+        detail: `Set objective window to 15-20 nm mean diameter and define citrate-to-gold ratio matrix before wet work. Use at least 5 ratio conditions (e.g., 1.5:1, 2.0:1, 2.5:1, 3.0:1, 3.5:1 mol/mol) with n >= 3 replicates each. Lock stirring speed, total volume, and heating profile to isolate ratio effects on nucleation-growth balance.`,
+        quantity: "1 design matrix, 5 ratio points, n >= 3 per point",
+        duration: "120m",
+        riskLevel: "med",
+        riskNote: "If only one ratio is tested, size-control claim is not defensible.",
+        validationChecks: ["Ratio matrix documented before synthesis run.", "Target acceptance criteria defined (15-20 nm, PDI <= 0.20)."],
+        decisionGate: "Do not start synthesis until the ratio matrix and acceptance criteria are approved.",
+        stepMaterials: [goldPrecursor, citrate, "Ultrapure water", "Calibrated pipettes"],
+        safetyConstraints: ["Use splash goggles and nitrile gloves when handling gold salts.", "Prepare all solutions in clean glassware to avoid nucleation artefacts."],
+        rationale: "A pre-specified matrix is required to claim that citrate ratio drives size control rather than uncontrolled process drift.",
+      },
+      {
+        title: `Prepare precursor and reductant stocks (${goldPrecursor}, ${reducer})`,
+        detail: `Prepare fresh aqueous stock of ${goldPrecursor} (e.g., 1 mM) and ${reducer} at controlled concentration. Filter solutions (0.22 µm) if particulates are present. Equilibrate both to the same starting temperature to minimise induction-time variability.`,
+        quantity: `${goldPrecursor} 1 mM stock, ${reducer} stock per matrix requirements`,
+        duration: "60m",
+        riskLevel: "med",
+        riskNote: "Concentration errors here propagate directly into wrong final size distribution.",
+        validationChecks: ["Stock concentration cross-checked by mass and final volume.", "No visible particulates in prepared stocks."],
+        decisionGate: "Proceed only if both stock solutions are clear and concentration-verified.",
+        stepMaterials: [goldPrecursor, reducer, "Volumetric flasks", "0.22 µm filters"],
+        safetyConstraints: ["Avoid skin contact with gold precursor solutions.", "Label all stock solutions with molarity and preparation time."],
+        rationale: "Accurate stock preparation is the dominant determinant of reproducibility in Turkevich synthesis.",
+      },
+      {
+        title: "Execute Turkevich reaction at controlled reflux",
+        detail: `Heat precursor solution to gentle reflux under constant stirring, then add citrate rapidly for each planned ratio condition. Start timing at citrate addition and keep thermal conditions constant across all batches. Observe colour transition (pale yellow -> wine red) as a qualitative nucleation indicator.`,
+        quantity: "One reaction vessel per ratio condition",
+        duration: "90m",
+        riskLevel: "high",
+        riskNote: "Addition timing and thermal instability are primary causes of off-target nanoparticle sizes.",
+        validationChecks: ["Document exact addition timestamp for each batch.", "Colour transition observed within expected window."],
+        decisionGate: "Repeat batch if temperature drift exceeds ±2°C during nucleation window.",
+        stepMaterials: [goldPrecursor, citrate, "Heating/stirring plate", "Reflux setup"],
+        safetyConstraints: ["Use heat-resistant gloves while handling reflux glassware.", "Do not leave reflux unattended."],
+        rationale: "Nucleation and early growth kinetics during this step define final particle diameter.",
+      },
+      {
+        title: "Quench, stabilise, and age colloids before readout",
+        detail: `After reaction endpoint, cool samples in a controlled manner and equilibrate to room temperature. Hold samples for a fixed aging window before characterization to avoid comparing non-equilibrated colloids. If needed, dilute to constant optical density range before UV-Vis.`,
+        quantity: "All batches normalised to consistent readout concentration",
+        duration: "60m",
+        riskLevel: "low",
+        riskNote: "Non-uniform post-reaction aging can shift apparent peak shape and inferred size.",
+        validationChecks: ["All batches cooled and aged under identical timing.", "No visible aggregation/precipitation before characterization."],
+        stepMaterials: ["Ice bath", "Storage vials", "Ultrapure water"],
+        safetyConstraints: ["Use clean, particle-free storage containers.", "Avoid vigorous vortexing that may induce aggregation."],
+        rationale: "Standardized post-synthesis handling prevents analytical bias between ratio conditions.",
+      },
+      {
+        title: "Characterize particle size and dispersity",
+        detail: `Measure UV-Vis spectra (look for LSPR peak around ~520 nm), DLS hydrodynamic diameter, and if available TEM for core-size confirmation. Compute mean size and PDI per condition. Cross-check that DLS trends and UV-Vis peak shifts are directionally consistent with citrate ratio changes.`,
+        quantity: "UV-Vis + DLS for every batch; TEM for representative conditions",
+        duration: "180m",
+        riskLevel: "high",
+        riskNote: "Using a single readout can misclassify aggregation as true size increase.",
+        validationChecks: ["Per-condition mean diameter and PDI calculated.", "UV-Vis peak position and width logged for all runs.", "At least one orthogonal size method confirms trend."],
+        decisionGate: "Advance only if at least one ratio condition meets 15-20 nm and PDI <= 0.20.",
+        stepMaterials: ["UV-Vis spectrophotometer", "DLS instrument", "TEM access (optional)"],
+        safetyConstraints: ["Follow instrument-specific laser and optical safety guidance.", "Use matched cuvettes and clean thoroughly between samples."],
+        rationale: "The hypothesis claim is specifically about size control, so quantitative size/dispersity readouts are mandatory.",
+      },
+      {
+        title: "Run control comparison and robustness checks",
+        detail: `Compare intervention matrix against baseline control ratio under identical conditions. Perform repeat synthesis on a different day to quantify batch-to-batch reproducibility. Evaluate whether size-control conclusion holds across repeats and not only in a single run.`,
+        quantity: "Minimum 2 independent synthesis days",
+        duration: "120m",
+        riskLevel: "med",
+        riskNote: "Single-day success can overstate controllability due to hidden environmental factors.",
+        validationChecks: ["Control ratio included in every run.", "Inter-day variance reported for key ratio conditions."],
+        decisionGate: "Do not claim robust size control unless trend reproduces across independent runs.",
+        stepMaterials: ["Control ratio batch records", "Repeat-run QC template"],
+        safetyConstraints: ["Use the same SOP revision across repeat runs.", "Document any process deviations before interpretation."],
+        rationale: "Reproducibility is required to move from exploratory chemistry to operational protocol.",
+      },
+      {
+        title: "Analyze data and decide optimal citrate-to-gold operating window",
+        detail: `Aggregate all characterization data, fit ratio-versus-size response, and identify operating window that reliably delivers 15-20 nm nanoparticles. Report confidence interval, failure cases, and practical tolerance bounds for future runs.`,
+        quantity: "1 analysis package with ratio-size model and decision memo",
+        duration: "120m",
+        riskLevel: "low",
+        riskNote: "Overfitting sparse data can produce false precision in recommended ratio windows.",
+        validationChecks: ["Final recommended ratio window documented.", "Acceptance and rejection criteria for future batches defined."],
+        decisionGate: "Promote to validated protocol only if recommended window meets target size across repeats.",
+        stepMaterials: ["Analysis workbook", "Statistical script/notebook"],
+        safetyConstraints: ["Archive raw files (UV-Vis, DLS, TEM) before reporting.", "Keep immutable copy of final decision report."],
+        rationale: "This step converts exploratory synthesis results into a reusable scientist-facing protocol.",
+      },
+    ];
+  }
 
   /* ── BIOSENSOR / DIAGNOSTICS ── */
   if (/(diagnostic|biosensor|crp|elisa|antibody|immunoassay|point-of-care|paper|strip)/.test(d)) {
@@ -1485,6 +1624,9 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
         riskNote:    tpl.riskNote || "",
         validationChecks: tpl.validationChecks || [],
         decisionGate: tpl.decisionGate,
+        stepMaterials: tpl.stepMaterials || [],
+        safetyConstraints: tpl.safetyConstraints || [],
+        rationale: tpl.rationale || "",
       };
     });
   }
@@ -1506,6 +1648,9 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     riskNote: "A mismatch between the proposed assay and the retrieved protocol family can invalidate all downstream steps.",
     validationChecks: ["Confirmed intervention/control/endpoint all appear in retrieved references."],
     decisionGate: "Do not procure materials until scientist confirms the retrieved precedent justifies the planned assay format.",
+    stepMaterials: ["Hypothesis statement", "Retrieved papers/protocols"],
+    safetyConstraints: ["No wet-lab execution before scientist sign-off on protocol fit."],
+    rationale: "Planning alignment prevents spending time and materials on an assay family that cannot test the hypothesis.",
   });
 
   materials.slice(0, 5).forEach((mat, idx) => {
@@ -1532,6 +1677,11 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
       decisionGate: isPrimary
         ? `Halt if ${mat.name} purity < 95% or if the measured MW deviates >2% from expected.`
         : undefined,
+      stepMaterials: [mat.name],
+      safetyConstraints: ["Verify SDS before handling concentrated reagents.", "Label all prepared stocks with concentration and timestamp."],
+      rationale: isPrimary
+        ? `Primary reagent quality sets the upper bound for interpretable ${assay} signal.`
+        : "Supporting reagents must be prepared consistently to avoid introducing uncontrolled variance.",
     });
   });
 
@@ -1552,6 +1702,9 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
       "All replicates within 20% CV.",
     ],
     decisionGate: `Advance only if pilot data show interpretable signal in the expected direction for ${assay}.`,
+    stepMaterials: [intervention, control, subject],
+    safetyConstraints: ["Run intervention and control arms under identical environmental conditions.", "Capture raw readouts before any normalization."],
+    rationale: `This is the first direct test of whether the intervention changes ${assay} against control.`
   });
 
   const refBench = refForStep(evidencePack, steps.length);
@@ -1571,16 +1724,43 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
       "Decision gate for next iteration recorded.",
     ],
     decisionGate: "Do not claim success until observed data and execution constraints are both consistent with the retrieved evidence.",
+    stepMaterials: ["Raw assay data", "Reference benchmarks"],
+    safetyConstraints: ["Freeze the analysis dataset before writing conclusions.", "Document failed runs alongside successful runs."],
+    rationale: "A protocol is only useful if outcomes are interpreted against predefined thresholds and literature context.",
   });
 
   return steps;
 }
 
 
+function durationToDays(duration = "") {
+  const d = duration.toLowerCase();
+  const dayMatch = d.match(/(\d+(?:\.\d+)?)\s*(day|days|d)\b/);
+  if (dayMatch) {
+    return Math.max(1, Math.round(Number(dayMatch[1])));
+  }
+
+  const hourMatch = d.match(/(\d+(?:\.\d+)?)\s*(hour|hours|h)\b/);
+  if (hourMatch) {
+    return 1;
+  }
+
+  const minuteMatch = d.match(/(\d+(?:\.\d+)?)\s*(minute|minutes|min|m)\b/);
+  if (minuteMatch) {
+    return 1;
+  }
+
+  if (d.includes("overnight")) {
+    return 1;
+  }
+
+  return 2;
+}
+
 function buildDynamicTimeline(steps) {
   return steps.map((step, index) => ({
     phase: step.title,
-    durationDays: step.duration.includes("hour") ? 1 : step.duration.includes("2 days") ? 2 : step.duration.includes("1 day") ? 1 : 2,
+    durationDays: durationToDays(step.duration),
     dependsOn: index === 0 ? [] : [steps[index - 1].title],
     owner: index === 0 ? "Scientific lead" : index === 1 ? "Research associate" : index === 2 ? "Assay scientist" : "Review scientist",
     deliverable: step.decisionGate || step.title,

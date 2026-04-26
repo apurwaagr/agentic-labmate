@@ -675,7 +675,7 @@ const Index = () => {
                 {activeTab === "protocol" && (
                   <div className="space-y-4">
                     <MoleculeCard plan={activePlan} />
-                    <ProtocolCard steps={activePlan.steps} materials={activePlan.materials} />
+                    <ProtocolCard planId={activePlan.id} steps={activePlan.steps} materials={activePlan.materials} />
                   </div>
                 )}
                 {activeTab === "budget" && (

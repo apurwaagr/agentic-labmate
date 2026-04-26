@@ -14,11 +14,59 @@ const riskIcon = {
   high: <XCircle className="size-3.5" />,
 };
 
-export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[]; materials?: MaterialItem[] }) {
+type StepStatus = "not-started" | "in-progress" | "blocked" | "done";
+
+const statusLabel: Record<StepStatus, string> = {
+  "not-started": "Not started",
+  "in-progress": "In progress",
+  blocked: "Blocked",
+  done: "Done",
+};
+
+const statusCls: Record<StepStatus, string> = {
+  "not-started": "border-border bg-panel text-muted-foreground",
+  "in-progress": "border-primary/30 bg-primary-soft text-primary",
+  blocked: "border-danger/30 bg-danger-soft text-danger",
+  done: "border-success/30 bg-success-soft text-success",
+};
+
+export function ProtocolCard({ steps, materials = [], planId }: { steps: ProtocolStep[]; materials?: MaterialItem[]; planId: string }) {
   const [open, setOpen] = useState<string | null>(steps[0]?.id ?? null);
+  const [stepStatus, setStepStatus] = useState<Record<string, StepStatus>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`agentic-labmate-step-status-${planId}`) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [stepLogs, setStepLogs] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`agentic-labmate-step-logs-${planId}`) || "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  function setStatus(stepId: string, status: StepStatus) {
+    setStepStatus((current) => {
+      const next = { ...current, [stepId]: status };
+      localStorage.setItem(`agentic-labmate-step-status-${planId}`, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function setLog(stepId: string, log: string) {
+    setStepLogs((current) => {
+      const next = { ...current, [stepId]: log };
+      localStorage.setItem(`agentic-labmate-step-logs-${planId}`, JSON.stringify(next));
+      return next;
+    });
+  }
 
   const highRiskCount = steps.filter((s) => s.riskLevel === "high").length;
   const gateCount = steps.filter((s) => s.decisionGate).length;
+  const doneCount = steps.filter((step) => (stepStatus[step.id] || "not-started") === "done").length;
+  const inProgressCount = steps.filter((step) => (stepStatus[step.id] || "not-started") === "in-progress").length;
 
   return (
     <section className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
@@ -51,6 +99,14 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
               <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/25 bg-danger-soft px-2.5 py-1 text-danger">
                 <AlertTriangle className="size-3" />
                 {highRiskCount} high-risk
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary-soft px-2.5 py-1 text-primary">
+              {doneCount}/{steps.length} done
+            </span>
+            {inProgressCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-2.5 py-1 text-accent-foreground">
+                {inProgressCount} in progress
               </span>
             )}
           </div>
@@ -88,6 +144,7 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
         {steps.map((step, index) => {
           const isOpen = open === step.id;
           const isLast = index === steps.length - 1;
+          const status = stepStatus[step.id] || "not-started";
           return (
             <div key={step.id} className="relative flex gap-3">
               {/* Step connector line */}
@@ -137,6 +194,9 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                         <Clock3 className="size-2.5" />
                         {step.duration}
                       </span>
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium ${statusCls[status]}`}>
+                        {statusLabel[status]}
+                      </span>
                       {step.sourceTitle ? (
                         <a
                           href={step.sourceUri || "#"}
@@ -162,8 +222,53 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
 
                 {isOpen && (
                   <div className="border-t border-border bg-panel/60 px-4 py-3 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-[11px] text-muted-foreground">Step status</label>
+                      <select
+                        value={status}
+                        onChange={(event) => setStatus(step.id, event.target.value as StepStatus)}
+                        className={`rounded-md border px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-primary/25 ${statusCls[status]}`}
+                      >
+                        <option value="not-started">Not started</option>
+                        <option value="in-progress">In progress</option>
+                        <option value="blocked">Blocked</option>
+                        <option value="done">Done</option>
+                      </select>
+                    </div>
+
                     {/* Procedure — compact prose */}
                     <p className="text-xs leading-relaxed text-foreground/80">{step.detail}</p>
+
+                    {step.stepMaterials && step.stepMaterials.length > 0 && (
+                      <div>
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Materials</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {step.stepMaterials.map((item) => (
+                            <span key={item} className="inline-flex items-center rounded-full border border-border bg-panel px-2 py-0.5 text-[10px] text-foreground/80">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {step.safetyConstraints && step.safetyConstraints.length > 0 && (
+                      <div>
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Safety constraints</div>
+                        <ul className="space-y-1">
+                          {step.safetyConstraints.map((constraint) => (
+                            <li key={constraint} className="text-[11px] text-foreground/75 leading-snug">• {constraint}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {step.rationale && (
+                      <div className="rounded-lg border border-primary/20 bg-primary-soft/25 px-2.5 py-2 text-[11px] text-foreground/80">
+                        <span className="mr-1 font-semibold text-primary">Why this step:</span>
+                        {step.rationale}
+                      </div>
+                    )}
 
                     {/* Validation checks */}
                     {step.validationChecks.length > 0 && (
@@ -209,6 +314,17 @@ export function ProtocolCard({ steps, materials = [] }: { steps: ProtocolStep[];
                           <span className="text-foreground/80">{step.decisionGate}</span>
                         </div>
                       )}
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Progress log</div>
+                      <textarea
+                        value={stepLogs[step.id] || ""}
+                        onChange={(event) => setLog(step.id, event.target.value)}
+                        rows={2}
+                        placeholder="Scientist notes while executing this step..."
+                        className="w-full rounded-md border border-border bg-panel px-2 py-1.5 text-[11px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/25 resize-none"
+                      />
                     </div>
                   </div>
                 )}

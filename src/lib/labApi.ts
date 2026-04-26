@@ -41,6 +41,9 @@ export type ProtocolStep = {
   riskNote?: string;
   validationChecks: string[];
   decisionGate?: string;
+  stepMaterials?: string[];
+  safetyConstraints?: string[];
+  rationale?: string;
 };
 
 export type MaterialItem = {
