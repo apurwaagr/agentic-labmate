@@ -371,8 +371,10 @@ async function callGemini({
   prompt,
   schema,
   grounded = false,
+  apiKey,
 }) {
-  if (!geminiApiKey) {
+  const effectiveKey = apiKey || geminiApiKey;
+  if (!effectiveKey) {
     throw new Error("Missing GEMINI_API_KEY");
   }
 
@@ -381,7 +383,7 @@ async function callGemini({
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${effectiveKey}`,
       {
         method: "POST",
         headers: {
@@ -844,8 +846,8 @@ function evidenceNovelty(hypothesis, evidencePack) {
     signal === "exact match found"
       ? "External literature APIs returned a very close precedent for the intervention, system, and measured outcome, so this plan should be treated as an adaptation rather than a greenfield protocol."
       : signal === "similar work exists"
-        ? "External literature APIs found related studies and protocols, but the exact intervention-outcome combination still needs scientist review."
-        : "No close precedent was found in the connected literature APIs, so this may represent a more novel workflow or a weak retrieval result that needs manual review.";
+        ? "Related literature describes adjacent interventions and outcome metrics, but the exact combination in this hypothesis has not been fully replicated. Review the retrieved references to identify the closest prior art."
+        : "No close precedent was found in the searched literature, suggesting this may represent a genuinely novel workflow — or retrieval coverage was limited. Validate with a targeted manual search.";
 
   return {
     signal,
@@ -2695,7 +2697,7 @@ function chatFallbackAnswer(question, experiment, reviews) {
   return `Start with the earliest decision gate: ${firstGate} After that, verify the most expensive or slowest material dependency and fold in the latest scientist correction before ordering.`;
 }
 
-async function chatReply(question, hypothesis, reviews, planContext) {
+async function chatReply(question, hypothesis, reviews, planContext, apiKey) {
   const plan = planContext
     ? {
         experiment: {
@@ -2712,7 +2714,7 @@ async function chatReply(question, hypothesis, reviews, planContext) {
       }
     : await generatePlan(hypothesis);
 
-  if (!geminiApiKey) {
+  if (!geminiApiKey && !apiKey) {
     return {
       answer: chatFallbackAnswer(question, plan.experiment, reviews),
       citations: plan.experiment.sources.slice(0, 2).map((source) => ({
@@ -2771,7 +2773,7 @@ ${JSON.stringify(reviews)}
 `;
 
   try {
-    const { data, references } = await callGemini({ prompt, schema, grounded: true });
+    const { data, references } = await callGemini({ prompt, schema, grounded: true, apiKey });
     return {
       answer: data.answer,
       citations: references.slice(0, 3).map((reference) => ({
@@ -2855,11 +2857,12 @@ createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/chat") {
       const body = await readBody(request);
+      const requestApiKey = request.headers.get("x-gemini-api-key") || undefined;
       const hypothesis = body.hypothesis || requireHypothesis();
       const experimentId = body.experimentId || detectDomain(hypothesis).id;
       const requestReviews = Array.isArray(body.reviews) ? body.reviews : [];
       const reviews = requestReviews.length > 0 ? requestReviews : relatedReviewsForHypothesis(hypothesis, experimentId);
-      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext));
+      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext, requestApiKey));
       return;
     }
 

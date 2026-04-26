@@ -79,6 +79,8 @@ const Index = () => {
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const logIntervalRef = useRef<number | null>(null);
+  // Prevents save effects from overwriting localStorage before the initial load has completed.
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     try {
@@ -108,28 +110,34 @@ const Index = () => {
       }
     } catch {
       setProjects([]);
+    } finally {
+      setInitialized(true);
     }
   }, []);
 
   useEffect(() => {
+    if (!initialized) return;
     localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
-  }, [projects]);
+  }, [initialized, projects]);
 
   useEffect(() => {
+    if (!initialized) return;
     localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(plansByProject));
-  }, [plansByProject]);
+  }, [initialized, plansByProject]);
 
   useEffect(() => {
+    if (!initialized) return;
     if (activeProjectId) {
       localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId);
     } else {
       localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
     }
-  }, [activeProjectId]);
+  }, [initialized, activeProjectId]);
 
   useEffect(() => {
+    if (!initialized) return;
     localStorage.setItem(BUDGET_REGION_STORAGE_KEY, budgetRegion.code);
-  }, [budgetRegion]);
+  }, [initialized, budgetRegion]);
 
   useEffect(() => {
     return () => {
@@ -147,14 +155,24 @@ const Index = () => {
   const activePlan = activeProject ? plansByProject[activeProject.id] : undefined;
   const activeReviews = activeProject ? reviewsByProject[activeProject.id] ?? [] : [];
 
+  // Auto-generate when project has no plan (new project or plan was lost).
   useEffect(() => {
-    // Only auto-generate on first creation (status "draft") — never re-run on project switch.
-    if (activeProject && activeProject.status === "draft" && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
+    if (activeProject && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
       void generateForProject(activeProject.id, activeProject.hypothesis);
     }
     // generateForProject is intentionally excluded to avoid retrigger loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject?.id, plansByProject, loading]);
+
+  // Load reviews from server whenever the active plan changes (covers page reloads).
+  useEffect(() => {
+    if (!activePlan || !activeProject) return;
+    fetchReviews(activePlan.id)
+      .then((reviews) => setReviewsByProject((curr) => ({ ...curr, [activeProject.id]: reviews })))
+      .catch(() => {/* server may be offline — reviews will load on next successful call */});
+    // fetchReviews is a stable import; activePlan.id + activeProject.id are the only relevant deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlan?.id]);
 
   function clearLogInterval() {
     if (logIntervalRef.current) {
@@ -294,7 +312,17 @@ const Index = () => {
     if (!activeProject) {
       return;
     }
-    await generateForProject(activeProject.id, activeProject.hypothesis);
+    // Refresh the reviews panel without regenerating the full plan.
+    // Users can click "Regenerate" explicitly if they want the plan updated.
+    try {
+      const planId = plansByProject[activeProject.id]?.id;
+      if (planId) {
+        const updatedReviews = await fetchReviews(planId);
+        setReviewsByProject((current) => ({ ...current, [activeProject.id]: updatedReviews }));
+      }
+    } catch {
+      // Server may be offline — review was already saved; UI will refresh on reconnect.
+    }
   }
 
   function selectProject(projectId: string) {

@@ -97,11 +97,6 @@ export function ContextStore({
             ? "border-warning/30 bg-warning-soft text-warning"
             : "border-success/30 bg-success-soft text-success";
           const score = isExact ? 92 : isSimilar ? 54 : 18;
-          const advice = isExact
-            ? "Strong precedent found — adapt the protocol rather than treating this as greenfield. Differentiate on method, scale, or system."
-            : isSimilar
-            ? "Related work exists — confirm your intervention-outcome pair is novel. Review the references below before finalising the design."
-            : "Weak or no precedent — this may be genuinely novel, or retrieval coverage was low. Validate with a manual literature search.";
           return (
             <>
               <div className={`flex items-center gap-2.5 px-3.5 py-3 ${headerCls}`}>
@@ -121,10 +116,6 @@ export function ContextStore({
                 </div>
               </div>
               <div className="px-3.5 pt-2.5 pb-1">
-                <div className="flex items-start gap-1.5 rounded-lg border border-border bg-muted/25 px-2.5 py-1.5 text-[11px] text-foreground/80 leading-snug mb-2.5">
-                  <Info className="size-3 shrink-0 mt-0.5 text-primary" />
-                  {advice}
-                </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{plan.novelty.summary}</p>
               </div>
             </>

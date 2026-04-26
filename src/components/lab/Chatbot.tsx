@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Loader2, MessageCircle, Send, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Key, Loader2, MessageCircle, Send, Sparkles, X } from "lucide-react";
 import { fetchChatReply, type ChatCitation, type ExperimentPlan, type ReviewRecord } from "@/lib/labApi";
 
 type Message = {
@@ -94,6 +94,12 @@ export function Chatbot({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<"checking" | "live" | "fallback" | "offline">("checking");
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem("agentic-labmate-gemini-key") ?? ""; } catch { return ""; }
+  });
+  const [keyDraft, setKeyDraft] = useState("");
+  const keyInputRef = useRef<HTMLInputElement>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -148,7 +154,7 @@ export function Chatbot({
     setLoading(true);
 
     try {
-      const reply = await fetchChatReply(experimentId, hypothesis, trimmed, plan, reviews);
+      const reply = await fetchChatReply(experimentId, hypothesis, trimmed, plan, reviews, apiKey || undefined);
       setStatus(reply.mode === "fallback" ? "fallback" : "live");
       setMessages((current) => [
         ...current,
@@ -208,10 +214,53 @@ export function Chatbot({
               <div className="text-[10px] text-muted-foreground">Grounded in the active plan and its review memory</div>
             </div>
           </div>
-          <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
-            <X className="size-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => { setShowKeyInput((v) => !v); setKeyDraft(apiKey); setTimeout(() => keyInputRef.current?.focus(), 50); }}
+              className={`rounded-md p-1.5 transition-colors ${apiKey ? "text-success hover:bg-success/10" : "text-muted-foreground hover:bg-muted/30"}`}
+              title={apiKey ? "Gemini key configured — click to update" : "Set Gemini API key"}
+            >
+              <Key className="size-3.5" />
+            </button>
+            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
+        {showKeyInput && (
+          <div className="mt-2.5 flex items-center gap-1.5">
+            <input
+              ref={keyInputRef}
+              type="password"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder="Paste Gemini API key (AIza…)"
+              className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const trimmed = keyDraft.trim();
+                  setApiKey(trimmed);
+                  try { localStorage.setItem("agentic-labmate-gemini-key", trimmed); } catch { /* ignore */ }
+                  setShowKeyInput(false);
+                  if (trimmed) setStatus("checking");
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const trimmed = keyDraft.trim();
+                setApiKey(trimmed);
+                try { localStorage.setItem("agentic-labmate-gemini-key", trimmed); } catch { /* ignore */ }
+                setShowKeyInput(false);
+                if (trimmed) setStatus("checking");
+              }}
+              className="rounded-lg bg-primary px-2.5 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
+            >
+              Save
+            </button>
+          </div>
+        )}
       </header>
 
       <div className="border-b border-border bg-background/70 px-3 py-2">

@@ -1,6 +1,17 @@
 import { useState } from "react";
-import { BookOpen, CheckCircle2, ExternalLink, FlaskConical, ShieldCheck, Sparkles } from "lucide-react";
+import { BookOpen, CheckCircle2, ExternalLink, FlaskConical, Search, ShieldCheck, Sparkles } from "lucide-react";
 import type { ExperimentPlan } from "@/lib/labApi";
+
+/** Returns external database search links for a compound by name */
+function compoundDbLinks(name: string) {
+  const q = encodeURIComponent(name);
+  return [
+    { label: "PubChem", href: `https://pubchem.ncbi.nlm.nih.gov/compound/${q}` },
+    { label: "ChEMBL", href: `https://www.ebi.ac.uk/chembl/compound_report_card/search/?q=${q}` },
+    { label: "ChemSpider", href: `https://www.chemspider.com/Search.aspx?q=${q}` },
+    { label: "KEGG", href: `https://www.genome.jp/dbget-bin/www_bfind_sub?mode=bfind&max_hit=10&dbkey=compound&keywords=${q}` },
+  ];
+}
 
 /** Domain  colour theme + icon + science-context label */
 function domainVisual(domain: string) {
@@ -41,6 +52,7 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
 
   const visual = domainVisual(plan.domain);
   const pubchemMaterials = plan.materials.filter((m) => m.pubchemCid);
+  const allMaterials = plan.materials;
 
   return (
     <section className="rounded-2xl border border-border bg-panel shadow-sm overflow-hidden">
@@ -73,21 +85,35 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
                 <Sparkles className="size-3" />
                 Target / Final Compound
               </div>
-              {plan.targetCompound.pubchemCid && (
+              {plan.targetCompound.pubchemCid ? (
                 <a href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`} target="_blank" rel="noreferrer"
                   className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-panel px-2 py-0.5 text-[10px] text-accent-foreground hover:bg-accent-soft transition-colors">
                   <ExternalLink className="size-2.5" />
                   PubChem CID {plan.targetCompound.pubchemCid}
                 </a>
+              ) : (
+                <div className="flex gap-1 flex-wrap">
+                  {compoundDbLinks(plan.targetCompound.name).map((db) => (
+                    <a key={db.label} href={db.href} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-panel px-2 py-0.5 text-[10px] text-accent-foreground hover:bg-accent-soft transition-colors">
+                      <Search className="size-2.5" />
+                      {db.label}
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
             <div className="flex gap-3 items-start">
-              {plan.targetCompound.pubchemCid && (
+              {plan.targetCompound.pubchemCid ? (
                 <a href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`} target="_blank" rel="noreferrer" className="shrink-0">
                   <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${plan.targetCompound.pubchemCid}/PNG?image_size=large`}
                     alt={`${plan.targetCompound.name} 2D structure`}
                     className="h-28 w-28 rounded-xl border border-border bg-white object-contain shadow-sm hover:shadow-md transition-shadow" />
                 </a>
+              ) : (
+                <div className="shrink-0 flex h-28 w-28 items-center justify-center rounded-xl border border-dashed border-accent/30 bg-muted/20">
+                  <FlaskConical className="size-8 text-accent/40" />
+                </div>
               )}
               <div className="space-y-1.5 text-xs min-w-0 flex-1">
                 <div className="font-semibold text-sm leading-snug">{plan.targetCompound.name}</div>
@@ -113,38 +139,60 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
         )}
 
         {/* All project compounds */}
-        {pubchemMaterials.length > 0 && (
+        {allMaterials.length > 0 && (
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               <FlaskConical className="size-3 text-primary" />
-              Project Compounds  PubChem verified ({pubchemMaterials.length})
+              Project Compounds ({allMaterials.length})
+              {pubchemMaterials.length > 0 && (
+                <span className="text-[10px] font-normal text-muted-foreground/60">· {pubchemMaterials.length} PubChem verified</span>
+              )}
             </div>
             <div className="flex gap-2.5 overflow-x-auto pb-1">
-              {pubchemMaterials.map((mat) => (
-                <a key={mat.pubchemCid}
-                  href={mat.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}`}
-                  target="_blank" rel="noreferrer"
-                  className="shrink-0 rounded-xl border border-border bg-panel p-2.5 w-[148px] hover:border-primary/40 hover:bg-primary-soft/20 hover:shadow-sm transition-all group">
-                  <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${mat.pubchemCid}/PNG?image_size=large`}
-                    alt={`${mat.name} structure`}
-                    className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain group-hover:border-primary/30 transition-colors" />
-                  <div className="text-[11px] font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{mat.name}</div>
-                  {mat.molecularFormula && <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>}
-                  <div className="mt-1 flex items-center justify-between gap-1">
-                    {mat.molecularWeight ? <span className="text-[10px] text-muted-foreground">{mat.molecularWeight.toFixed(0)} g/mol</span> : <span />}
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">CID {mat.pubchemCid} <ExternalLink className="size-2.5" /></span>
+              {allMaterials.map((mat) => (
+                mat.pubchemCid ? (
+                  <a key={mat.pubchemCid || mat.name}
+                    href={mat.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}`}
+                    target="_blank" rel="noreferrer"
+                    className="shrink-0 rounded-xl border border-border bg-panel p-2.5 w-[148px] hover:border-primary/40 hover:bg-primary-soft/20 hover:shadow-sm transition-all group">
+                    <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${mat.pubchemCid}/PNG?image_size=large`}
+                      alt={`${mat.name} structure`}
+                      className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain group-hover:border-primary/30 transition-colors" />
+                    <div className="text-[11px] font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{mat.name}</div>
+                    {mat.molecularFormula && <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>}
+                    <div className="mt-1 flex items-center justify-between gap-1">
+                      {mat.molecularWeight ? <span className="text-[10px] text-muted-foreground">{mat.molecularWeight.toFixed(0)} g/mol</span> : <span />}
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">CID {mat.pubchemCid} <ExternalLink className="size-2.5" /></span>
+                    </div>
+                  </a>
+                ) : (
+                  <div key={mat.name}
+                    className="shrink-0 rounded-xl border border-dashed border-border bg-muted/10 p-2.5 w-[148px]">
+                    <div className="mb-1.5 flex h-20 w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/20">
+                      <FlaskConical className="size-6 text-muted-foreground/30" />
+                    </div>
+                    <div className="text-[11px] font-semibold leading-tight line-clamp-2">{mat.name}</div>
+                    {mat.molecularFormula && <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>}
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {compoundDbLinks(mat.name).slice(0, 2).map((db) => (
+                        <a key={db.label} href={db.href} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-0.5 rounded-full border border-primary/20 bg-primary-soft/30 px-1.5 py-0.5 text-[9px] text-primary hover:bg-primary-soft transition-colors">
+                          <Search className="size-2" />{db.label}
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                </a>
+                )
               ))}
             </div>
           </div>
         )}
 
-        {pubchemMaterials.length === 0 && !plan.targetCompound && (
+        {allMaterials.length === 0 && !plan.targetCompound && (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center">
             <FlaskConical className="mx-auto mb-1.5 size-7 text-muted-foreground/40" />
-            <div className="text-xs font-medium text-foreground/70">{plan.materials[0]?.name || "Project compound"}</div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">PubChem structure lookup pending for this compound set.</div>
+            <div className="text-xs font-medium text-foreground/70">No compounds specified yet</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">Compound identities will appear here once the plan is generated.</div>
           </div>
         )}
 

@@ -646,12 +646,13 @@ export async function fetchChatReply(
   question: string,
   plan?: ExperimentPlan,
   reviews?: ReviewRecord[],
+  apiKey?: string,
 ): Promise<ChatReply> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers["x-gemini-api-key"] = apiKey;
   const response = await fetchWithTimeout("/api/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       experimentId,
       hypothesis,
