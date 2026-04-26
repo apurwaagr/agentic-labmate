@@ -216,6 +216,93 @@ function hostLabel(uri = "") {
   }
 }
 
+function directResourceUri(source = "", title = "", hypothesis = "") {
+  const label = source.toLowerCase();
+  const query = encodeURIComponent((title || hypothesis || "scientific protocol").trim());
+
+  if (label.includes("protocols.io")) {
+    return `https://www.protocols.io/search?query=${query}`;
+  }
+
+  if (label.includes("bio-protocol")) {
+    return `https://bio-protocol.org/search.aspx?search=${query}`;
+  }
+
+  if (label.includes("thermofisher")) {
+    return `https://www.thermofisher.com/search/results?query=${query}`;
+  }
+
+  if (label.includes("sigma") || label.includes("sigmaaldrich")) {
+    return `https://www.sigmaaldrich.com/US/en/search/${query}`;
+  }
+
+  if (label.includes("promega")) {
+    return `https://www.promega.com/search/?query=${query}`;
+  }
+
+  if (label.includes("qiagen")) {
+    return `https://www.qiagen.com/us/search?query=${query}`;
+  }
+
+  if (label.includes("atcc")) {
+    return `https://www.atcc.org/search#q=${query}`;
+  }
+
+  if (label.includes("addgene")) {
+    return `https://www.addgene.org/search/catalog/plasmids/?q=${query}`;
+  }
+
+  if (label.includes("jove")) {
+    return `https://www.jove.com/search?q=${query}`;
+  }
+
+  if (label.includes("nature")) {
+    return `https://www.nature.com/search?q=${query}`;
+  }
+
+  return `https://${source || "pubmed.ncbi.nlm.nih.gov"}`;
+}
+
+function buildBudget(materials, budget, timeline, domainName) {
+  const reagentSubtotal = budget.reagentsUsd ?? materials.reduce((sum, item) => sum + item.unitCostUsd, 0);
+  const equipmentSubtotal = budget.equipmentUsd ?? 0;
+  const shippingUsd = budget.shippingUsd ?? Math.max(45, Math.round(materials.length * 18));
+  const totalDays = timeline.reduce((sum, phase) => sum + phase.durationDays, 0);
+  const laborUsd = budget.laborUsd ?? Math.round(totalDays * 85);
+  const contingencyUsd = budget.contingencyUsd ?? Math.round((reagentSubtotal + equipmentSubtotal + shippingUsd) * 0.12);
+  const computedOperationalTotal = reagentSubtotal + equipmentSubtotal + shippingUsd + laborUsd + contingencyUsd;
+  const totalUsd = Math.max(budget.totalUsd ?? 0, computedOperationalTotal);
+  const budgetCapUsd = Math.max(budget.budgetCapUsd ?? 0, Math.round(totalUsd * 1.65));
+
+  return {
+    reagentsUsd: reagentSubtotal,
+    equipmentUsd: equipmentSubtotal,
+    shippingUsd,
+    laborUsd,
+    contingencyUsd,
+    totalUsd,
+    budgetCapUsd,
+    savedUsd: Math.max(0, budgetCapUsd - totalUsd),
+    reliability:
+      budget.reliability ||
+      `Moderate confidence. ${domainName} pricing includes procurement, setup, and staffing assumptions rather than reagent-only estimates.`,
+    assumptions:
+      budget.assumptions || [
+        "Catalog prices are estimated in USD for planning and may vary by institution or geography.",
+        "Labor assumes one scientist plus shared technician support during active execution windows.",
+        "Shipping reflects cold-chain and rush risk on critical-path items, not standard institutional freight contracts.",
+      ],
+    lineItems:
+      budget.lineItems || [
+        { label: "Reagents and consumables", amountUsd: reagentSubtotal, category: "reagents" },
+        { label: "Equipment access and assay hardware", amountUsd: equipmentSubtotal, category: "equipment" },
+        { label: "Procurement and cold-chain shipping", amountUsd: shippingUsd, category: "shipping" },
+        { label: "Hands-on scientist time", amountUsd: laborUsd, category: "labor" },
+        { label: "Operational contingency", amountUsd: contingencyUsd, category: "contingency" },
+      ],
+  };
+}
+
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
     "Content-Type": "application/json",
@@ -324,16 +411,112 @@ function hypothesisParseFallback(hypothesis) {
   };
 }
 
+function fallbackPublicationReferences(domainName) {
+  if (domainName === "Diagnostics") {
+    return [
+      {
+        title: "Multifunctional self-driven origami paper-based integrated microfluidic chip to detect CRP and PAB in whole blood",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/35358776/",
+      },
+      {
+        title: "Paper-based sensors and assays for personalized health care",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/25943067/",
+      },
+      {
+        title: "Recent advances in paper-based electrochemical biosensors",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/33743376/",
+      },
+    ];
+  }
+
+  if (domainName === "In Vivo Gut Health") {
+    return [
+      {
+        title: "Lactobacillus rhamnosus GG treatment improves intestinal permeability and modulates microbiota dysbiosis in an experimental model of sepsis",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/30628657/",
+      },
+      {
+        title: "Lactobacillus rhamnosus GG Protects the Epithelial Barrier of Wistar Rats from the PTG-Induced Enteropathy",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/30405050/",
+      },
+      {
+        title: "FITC-dextran assay as a readout of intestinal permeability in murine models",
+        source: "bio-protocol.org",
+        uri: "https://bio-protocol.org/en/bpdetail?id=3974&type=0",
+      },
+    ];
+  }
+
+  if (domainName === "Cell Biology") {
+    return [
+      {
+        title: "Intracellular trehalose improves the survival of cryopreserved mammalian cells",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/10657121/",
+      },
+      {
+        title: "Freezing-induced uptake of trehalose into mammalian cells facilitates cryopreservation",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/27003129/",
+      },
+      {
+        title: "Trehalose in Biomedical Cryopreservation-Properties, Mechanisms, Delivery Methods, Applications, Benefits, and Problems",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/36779397/",
+      },
+    ];
+  }
+
+  if (domainName === "Electrochemistry Climate") {
+    return [
+      {
+        title: "Performance of different Sporomusa species for the microbial electrosynthesis of acetate from carbon dioxide",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/28279911/",
+      },
+      {
+        title: "Dual cathode configuration and headspace gas recirculation for enhancing microbial electrosynthesis using Sporomusa ovata",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/34543900/",
+      },
+      {
+        title: "Sporomusa ovata as Catalyst for Bioelectrochemical Carbon Dioxide Reduction: A Review Across Disciplines From Microbiology to Process Engineering",
+        source: "pubmed.ncbi.nlm.nih.gov",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/35801113/",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "protocols.io experimental methods collection",
+      source: "protocols.io",
+      uri: "https://www.protocols.io/",
+    },
+    {
+      title: "Bio-protocol methods collection",
+      source: "bio-protocol.org",
+      uri: "https://bio-protocol.org/",
+    },
+    {
+      title: "PubMed scientific literature",
+      source: "pubmed.ncbi.nlm.nih.gov",
+      uri: "https://pubmed.ncbi.nlm.nih.gov/",
+    },
+  ];
+}
+
 function noveltyFallback(hypothesis) {
   const domain = detectDomain(hypothesis);
   return {
     signal: "similar work exists",
     summary: `The hypothesis appears to build on established ${domain.name.toLowerCase()} methods, but the exact intervention-outcome combination still needs a confirmatory expert check.`,
-    references: [
-      { title: "protocols.io search workflow", source: "protocols.io" },
-      { title: "Bio-protocol reference workflow", source: "bio-protocol.org" },
-      { title: "Supplier application notes", source: "thermofisher.com" },
-    ],
+    references: fallbackPublicationReferences(domain.name),
   };
 }
 
@@ -692,6 +875,7 @@ function planFallback(hypothesis) {
   };
 
   const template = domainPlans[domain.name] || domainPlans["Molecular Biology"];
+  const budget = buildBudget(template.materials, template.budget, template.timeline, domain.name);
 
   return {
     experiment: {
@@ -709,14 +893,26 @@ function planFallback(hypothesis) {
       materials: template.materials,
       steps: template.steps,
       timeline: template.timeline,
-      budget: template.budget,
+      budget,
       benchmark: template.benchmark,
       validation: template.validation,
       reviewAdaptations,
       sources: [
-        { title: "protocols.io workflow", source: "protocols.io" },
-        { title: "Supplier technical references", source: "thermofisher.com" },
-        { title: "Peer protocol references", source: "bio-protocol.org" },
+        {
+          title: "protocols.io workflow",
+          source: "protocols.io",
+          uri: directResourceUri("protocols.io", hypothesis, hypothesis),
+        },
+        {
+          title: "Supplier technical references",
+          source: "thermofisher.com",
+          uri: directResourceUri("thermofisher.com", hypothesis, hypothesis),
+        },
+        {
+          title: "Peer protocol references",
+          source: "bio-protocol.org",
+          uri: directResourceUri("bio-protocol.org", hypothesis, hypothesis),
+        },
       ],
     },
   };
@@ -893,9 +1089,30 @@ async function generatePlan(hypothesis) {
         properties: {
           reagentsUsd: { type: "NUMBER" },
           equipmentUsd: { type: "NUMBER" },
+          shippingUsd: { type: "NUMBER" },
+          laborUsd: { type: "NUMBER" },
+          contingencyUsd: { type: "NUMBER" },
           totalUsd: { type: "NUMBER" },
           budgetCapUsd: { type: "NUMBER" },
           savedUsd: { type: "NUMBER" },
+          reliability: { type: "STRING" },
+          assumptions: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+          },
+          lineItems: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                label: { type: "STRING" },
+                amountUsd: { type: "NUMBER" },
+                category: { type: "STRING", enum: ["reagents", "equipment", "shipping", "labor", "contingency"] },
+                note: { type: "STRING" },
+              },
+              required: ["label", "amountUsd", "category"],
+            },
+          },
         },
         required: ["reagentsUsd", "equipmentUsd", "totalUsd", "budgetCapUsd", "savedUsd"],
       },
@@ -973,6 +1190,13 @@ Output style:
 
   const references = generated.references.length > 0 ? generated.references : fallback.experiment.sources;
   const data = generated.data;
+  const materials = data.materials?.length ? data.materials : fallback.experiment.materials;
+  const timeline = data.timeline?.length ? data.timeline : fallback.experiment.timeline;
+  const budget = buildBudget(materials, data.budget || fallback.experiment.budget, timeline, domain.name);
+  const normalizedReferences = references.map((reference) => ({
+    ...reference,
+    uri: reference.uri || directResourceUri(reference.source, reference.title, hypothesis),
+  }));
 
   return {
     experiment: {
@@ -987,16 +1211,16 @@ Output style:
         sustainability: data.sustainability || "70",
       },
       novelty,
-      materials: data.materials?.length ? data.materials : fallback.experiment.materials,
+      materials,
       steps: data.steps?.length ? data.steps : fallback.experiment.steps,
-      timeline: data.timeline?.length ? data.timeline : fallback.experiment.timeline,
-      budget: data.budget || fallback.experiment.budget,
+      timeline,
+      budget,
       benchmark: data.benchmark?.length ? data.benchmark : fallback.experiment.benchmark,
       validation: data.validation || fallback.experiment.validation,
       reviewAdaptations: data.reviewAdaptations?.length
         ? data.reviewAdaptations
         : fallback.experiment.reviewAdaptations,
-      sources: references,
+      sources: normalizedReferences,
     },
   };
 }
@@ -1091,21 +1315,65 @@ function knowledgeGraphContext(plan, reviews) {
   };
 }
 
-async function chatReply(question, hypothesis, reviews) {
-  const plan = await generatePlan(hypothesis);
+function chatFallbackAnswer(question, experiment, reviews) {
+  const lower = question.toLowerCase();
+  const firstGate = experiment.validation?.decisionGates?.[0] || "Review the first validation gate before moving to procurement.";
+  const firstRiskyMaterial = [...(experiment.materials || [])].sort((a, b) => b.unitCostUsd - a.unitCostUsd)[0];
+  const latestReview = reviews[0];
+
+  if (lower.includes("review")) {
+    return latestReview
+      ? `The latest scientist correction focuses on ${latestReview.section.toLowerCase()}: "${latestReview.correction}" In the current plan, that should be treated as an explicit guardrail before the next execution round.`
+      : "No scientist review note is stored yet, so the next best step is to annotate one concrete protocol or budget correction and regenerate.";
+  }
+
+  if (lower.includes("material") || lower.includes("supply")) {
+    return firstRiskyMaterial
+      ? `${firstRiskyMaterial.name} looks like the most operationally sensitive dependency because it combines a visible cost with a ${firstRiskyMaterial.leadTime} lead time from ${firstRiskyMaterial.supplier}.`
+      : "The current plan does not isolate a single blocking material yet, so check the ordering list and cold-chain dependencies before purchase.";
+  }
+
+  if (lower.includes("budget") || lower.includes("cost")) {
+    return `The current operational budget is ${experiment.budget?.totalUsd ?? 0} USD before region-specific adjustment. The fastest way to avoid wasted spend is to test this gate first: ${firstGate}`;
+  }
+
+  if (lower.includes("weak") || lower.includes("fail") || lower.includes("risk")) {
+    return `The riskiest part of the current plan is the earliest stop/go gate: ${firstGate} A scientist should validate that assumption before trusting the rest of the workflow.`;
+  }
+
+  return `Start with the earliest decision gate: ${firstGate} After that, verify the most expensive or slowest material dependency and fold in the latest scientist correction before ordering.`;
+}
+
+async function chatReply(question, hypothesis, reviews, planContext) {
+  const plan = planContext
+    ? {
+        experiment: {
+          id: detectDomain(hypothesis).id,
+          hypothesis,
+          domain: planContext.domain || detectDomain(hypothesis).name,
+          novelty: planContext.novelty || noveltyFallback(hypothesis),
+          validation: planContext.validation || { primaryMetric: "", successCriteria: "", failureCriteria: [], decisionGates: [] },
+          reviewAdaptations: planContext.reviewAdaptations || [],
+          materials: planContext.materials || planContext.keyMaterials || [],
+          budget: planContext.budget || { totalUsd: 0, savedUsd: 0 },
+          sources: planContext.sources || [],
+        },
+      }
+    : await generatePlan(hypothesis);
 
   if (!geminiApiKey) {
     return {
-      answer:
-        "The plan is stronger when it names explicit decision gates, critical-path materials, and the corrections learned from prior reviews. In this workflow, the next scientist action should be to inspect the validation gates and confirm the riskiest material dependency before ordering.",
+      answer: chatFallbackAnswer(question, plan.experiment, reviews),
       citations: plan.experiment.sources.slice(0, 2).map((source) => ({
         title: source.title,
         source: source.source,
+        uri: source.uri,
       })),
       followUps: [
         "Which validation gate is most likely to fail first?",
         "How did prior scientist reviews change this plan?",
       ],
+      mode: "fallback",
     };
   }
 
@@ -1158,21 +1426,24 @@ ${JSON.stringify(reviews)}
       citations: references.slice(0, 3).map((reference) => ({
         title: reference.title,
         source: reference.source,
+        uri: reference.uri || directResourceUri(reference.source, reference.title, hypothesis),
       })),
       followUps: data.followUps || [],
+      mode: "grounded",
     };
   } catch {
     return {
-      answer:
-        "Gemini did not return a stable grounded answer in time, so the copilot is falling back to the current operational plan. Check the validation gates first, then confirm critical-path materials and the latest scientist corrections before ordering.",
+      answer: chatFallbackAnswer(question, plan.experiment, reviews),
       citations: plan.experiment.sources.slice(0, 2).map((source) => ({
         title: source.title,
         source: source.source,
+        uri: source.uri,
       })),
       followUps: [
         "Which validation gate is most likely to fail first?",
         "What changed because of prior reviews?",
       ],
+      mode: "fallback",
     };
   }
 }
@@ -1231,8 +1502,9 @@ createServer(async (request, response) => {
       const body = await readBody(request);
       const hypothesis = body.hypothesis || defaultHypothesis;
       const experimentId = body.experimentId || detectDomain(hypothesis).id;
-      const reviews = reviewStore.filter((review) => review.experimentId === experimentId);
-      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews));
+      const requestReviews = Array.isArray(body.reviews) ? body.reviews : [];
+      const reviews = requestReviews.length > 0 ? requestReviews : reviewStore.filter((review) => review.experimentId === experimentId);
+      sendJson(response, 200, await chatReply(body.question || "", hypothesis, reviews, body.planContext));
       return;
     }
 

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, MessageCircle, Send, Sparkles, X } from "lucide-react";
-import { fetchChatReply, type ChatCitation } from "@/lib/labApi";
+import { fetchChatReply, type ChatCitation, type ExperimentPlan, type ReviewRecord } from "@/lib/labApi";
 
 type Message = {
   role: "agent" | "user";
@@ -9,32 +9,69 @@ type Message = {
   followUps?: string[];
 };
 
-function AgentBubble({ message }: { message: Message }) {
+const starterPrompts = [
+  "What is the weakest part of this plan?",
+  "Which validation gate is most likely to fail first?",
+  "Which materials are on the critical path?",
+  "How did prior scientist reviews change this plan?",
+];
+
+function buildFallbackReply(question: string, plan: ExperimentPlan, reviews: ReviewRecord[]) {
+  const lower = question.toLowerCase();
+  const firstGate = plan.validation.decisionGates[0] || "Review the first protocol validation gate before committing resources.";
+  const firstRiskyMaterial = [...plan.materials].sort((a, b) => b.unitCostUsd - a.unitCostUsd)[0];
+  const latestReview = reviews[0];
+
+  if (lower.includes("review")) {
+    return latestReview
+      ? `The last scientist correction focused on ${latestReview.section.toLowerCase()}: "${latestReview.correction}" That is now reflected as a guardrail in the regenerated plan.`
+      : "No scientist corrections are stored yet, so the next high-value step is to annotate one weak assumption and regenerate the plan.";
+  }
+
+  if (lower.includes("material") || lower.includes("supply")) {
+    return firstRiskyMaterial
+      ? `${firstRiskyMaterial.name} is the main critical-path material right now because it carries the highest visible cost and a ${firstRiskyMaterial.leadTime} lead time from ${firstRiskyMaterial.supplier}.`
+      : "The plan does not expose a single blocking material yet, so check the ordering list before procurement.";
+  }
+
+  if (lower.includes("budget") || lower.includes("cost")) {
+    return `The operational budget is ${plan.budget.totalUsd.toLocaleString()} USD, with ${plan.budget.savedUsd.toLocaleString()} USD of headroom against the cap. The fastest way to de-risk spend is to validate ${firstGate.toLowerCase()}`;
+  }
+
+  return `The first place I would inspect is this gate: ${firstGate} After that, verify the highest-risk material dependency and whether the latest review note changes the execution order.`;
+}
+
+function AgentBubble({ message, onFollowUp }: { message: Message; onFollowUp?: (followUp: string) => void }) {
   return (
     <div className="max-w-[88%] rounded-xl border border-border bg-muted px-3 py-2.5 text-xs leading-relaxed text-foreground">
       <p>{message.text}</p>
       {message.citations && message.citations.length > 0 && (
         <div className="mt-2 space-y-1">
           {message.citations.map((citation) => (
-            <div
+            <a
               key={`${citation.title}-${citation.source}`}
-              className="rounded-md border border-border bg-background/80 px-2 py-1 text-[10px] text-muted-foreground"
+              href={citation.uri}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-md border border-border bg-background/80 px-2 py-1 text-[10px] text-muted-foreground hover:border-primary/30"
             >
               <span className="font-medium text-foreground">{citation.title}</span>
               <span> · {citation.source}</span>
-            </div>
+            </a>
           ))}
         </div>
       )}
       {message.followUps && message.followUps.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {message.followUps.map((followUp) => (
-            <span
+            <button
               key={followUp}
+              type="button"
+              onClick={() => void onFollowUp?.(followUp)}
               className="rounded-full border border-primary/25 bg-primary-soft px-2 py-1 text-[10px] text-primary"
             >
               {followUp}
-            </span>
+            </button>
           ))}
         </div>
       )}
@@ -42,17 +79,21 @@ function AgentBubble({ message }: { message: Message }) {
   );
 }
 
-export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hypothesis: string }) {
-  const starterPrompts = [
-    "What is the weakest part of this plan?",
-    "Which validation gate is most likely to fail first?",
-    "Which materials are on the critical path?",
-    "How did prior scientist reviews change this plan?",
-  ];
-
+export function Chatbot({
+  experimentId,
+  hypothesis,
+  plan,
+  reviews,
+}: {
+  experimentId: string;
+  hypothesis: string;
+  plan: ExperimentPlan;
+  reviews: ReviewRecord[];
+}) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<"checking" | "live" | "fallback" | "offline">("checking");
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -61,6 +102,40 @@ export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hy
       followUps: starterPrompts.slice(0, 2),
     },
   ]);
+
+  useEffect(() => {
+    setMessages([
+      {
+        role: "agent",
+        text:
+          "I am your Scientist Copilot. Ask about novelty, validation gates, supply-chain risk, or how the latest reviews changed this plan.",
+        followUps: starterPrompts.slice(0, 2),
+      },
+    ]);
+  }, [experimentId, hypothesis]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkHealth() {
+      try {
+        const response = await fetch("/api/health");
+        if (!active) {
+          return;
+        }
+        setStatus(response.ok ? "live" : "offline");
+      } catch {
+        if (active) {
+          setStatus("offline");
+        }
+      }
+    }
+
+    void checkHealth();
+    return () => {
+      active = false;
+    };
+  }, [experimentId]);
 
   async function submitQuestion(question: string) {
     const trimmed = question.trim();
@@ -73,7 +148,8 @@ export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hy
     setLoading(true);
 
     try {
-      const reply = await fetchChatReply(experimentId, hypothesis, trimmed);
+      const reply = await fetchChatReply(experimentId, hypothesis, trimmed, plan, reviews);
+      setStatus(reply.mode === "fallback" ? "fallback" : "live");
       setMessages((current) => [
         ...current,
         {
@@ -84,12 +160,21 @@ export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hy
         },
       ]);
     } catch {
+      setStatus("offline");
       setMessages((current) => [
         ...current,
         {
           role: "agent",
-          text:
-            "The copilot could not reach the API just now. Start the API with `npm run api` and I will answer with grounded plan context.",
+          text: buildFallbackReply(trimmed, plan, reviews),
+          citations: plan.sources.slice(0, 2).map((source) => ({
+            title: source.title,
+            source: source.source,
+            uri: source.uri,
+          })),
+          followUps: [
+            "Which materials are on the critical path?",
+            "How did prior scientist reviews change this plan?",
+          ],
         },
       ]);
     } finally {
@@ -129,7 +214,20 @@ export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hy
       </header>
 
       <div className="border-b border-border bg-background/70 px-3 py-2">
-        <div className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">Fast prompts</div>
+        <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span>Fast prompts</span>
+          <span className={`rounded-full px-2 py-0.5 ${
+            status === "live"
+              ? "bg-success-soft text-success"
+              : status === "fallback"
+                ? "bg-accent-soft text-accent-foreground"
+                : status === "offline"
+                  ? "bg-warning-soft text-warning"
+                  : "bg-muted text-muted-foreground"
+          }`}>
+            {status === "live" ? "Grounded" : status === "fallback" ? "Model fallback" : status === "offline" ? "Local fallback" : "Checking"}
+          </span>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {starterPrompts.map((prompt) => (
             <button
@@ -149,7 +247,13 @@ export function Chatbot({ experimentId, hypothesis }: { experimentId: string; hy
       <div className="flex-1 space-y-2.5 overflow-y-auto p-3">
         {messages.map((message, index) =>
           message.role === "agent" ? (
-            <AgentBubble key={`${message.role}-${index}`} message={message} />
+            <AgentBubble
+              key={`${message.role}-${index}`}
+              message={message}
+              onFollowUp={(followUp) => {
+                void submitQuestion(followUp);
+              }}
+            />
           ) : (
             <div
               key={`${message.role}-${index}`}
