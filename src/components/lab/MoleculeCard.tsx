@@ -1,7 +1,54 @@
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FlaskConical, RotateCw } from "lucide-react";
-import { fetchCompoundResolution, type CompoundResolution, type ExperimentPlan } from "@/lib/labApi";
+import { ExternalLink, FlaskConical, Loader2, RotateCw } from "lucide-react";
+import type { ExperimentPlan } from "@/lib/labApi";
 import { Molecule3DViewer } from "@/components/lab/Molecule3DViewer";
+
+// ─── PubChem direct lookups (no backend needed) ───────────────────────────────
+
+async function pubchemCidByName(name: string): Promise<number | null> {
+  try {
+    const url = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/cids/JSON`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json() as { IdentifierList?: { CID?: number[] } };
+    return data?.IdentifierList?.CID?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Image sources (waterfall: CID fast → CID PUG → name PUG → Cactus) ──────
+
+function imgByCid(cid: number) {
+  return `https://pubchem.ncbi.nlm.nih.gov/image/imgsrv.fcgi?cid=${cid}&t=l`;
+}
+function imgByCidPug(cid: number) {
+  return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/PNG?image_size=large`;
+}
+function imgByNamePubchem(name: string) {
+  return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/PNG?image_size=large`;
+}
+function imgByNameCactus(name: string) {
+  return `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(name)}/image`;
+}
+function imageSources(name: string, cid: number | null): string[] {
+  const list: string[] = [];
+  if (cid) { list.push(imgByCid(cid), imgByCidPug(cid)); }
+  list.push(imgByNamePubchem(name), imgByNameCactus(name));
+  return Array.from(new Set(list));
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function resolvedKey(name: string) { return name.trim().toLowerCase(); }
+
+function likelyHas3D(name: string, formula?: string) {
+  const n = name.toLowerCase();
+  if (n.includes("nanoparticle") || n.includes("polymer") || n.includes("protein") || n.includes("antibody")) return false;
+  const f = (formula ?? "").toUpperCase().trim();
+  if (["AU", "AG", "PT", "FE", "CU", "ZN"].includes(f)) return false;
+  return true;
+}
 
 function domainVisual(domain: string) {
   const d = domain.toLowerCase();
@@ -22,41 +69,11 @@ function domainVisual(domain: string) {
   return { bg: "from-slate-50 to-zinc-50", icon: "🔭", label: "Life Science", accent: "text-slate-600" };
 }
 
-function structureImageUrlFast(cid: number) {
-  return `https://pubchem.ncbi.nlm.nih.gov/image/imgsrv.fcgi?cid=${cid}&t=l`;
-}
-function structureImageUrl(cid: number) {
-  return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/PNG?image_size=large`;
-}
-function structureImageByNameUrl(name: string) {
-  return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(name)}/PNG?image_size=large`;
-}
-function structureImageByNameCactus(name: string) {
-  return `https://cactus.nci.nih.gov/chemical/structure/${encodeURIComponent(name)}/image`;
-}
-function uniq(arr: string[]) {
-  return Array.from(new Set(arr.filter(Boolean)));
-}
-function resolvedKey(name: string) {
-  return name.trim().toLowerCase();
-}
-function likelyHas3D(name: string, formula?: string) {
-  const n = name.toLowerCase();
-  if (n.includes("nanoparticle") || n.includes("polymer") || n.includes("protein") || n.includes("antibody")) return false;
-  const f = (formula || "").toUpperCase().trim();
-  if (f === "AU" || f === "AG" || f === "PT" || f === "FE" || f === "CU") return false;
-  return true;
-}
+// ─── StructureImage ───────────────────────────────────────────────────────────
 
 function StructureImage({ name, cid, alt, className }: { name: string; cid?: number | null; alt: string; className: string }) {
-  const sources = useMemo(() => uniq([
-    cid ? structureImageUrlFast(cid) : "",
-    cid ? structureImageUrl(cid) : "",
-    structureImageByNameUrl(name),
-    structureImageByNameCactus(name),
-  ]), [name, cid]);
+  const sources = useMemo(() => imageSources(name, cid ?? null), [name, cid]);
   const [index, setIndex] = useState(0);
-
   useEffect(() => { setIndex(0); }, [name, cid]);
 
   if (index >= sources.length) {
@@ -80,7 +97,9 @@ function StructureImage({ name, cid, alt, className }: { name: string; cid?: num
 }
 
 export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
-  const [resolvedByName, setResolvedByName] = useState<Record<string, CompoundResolution>>({});
+  // CIDs resolved directly from PubChem REST API (no backend needed)
+  const [resolvedCids, setResolvedCids] = useState<Record<string, number>>({}); // key = resolvedKey(name)
+  const [resolvingNames, setResolvingNames] = useState<Set<string>>(new Set());
   const [active3D, setActive3D] = useState<{ cid: number; name: string } | null>(null);
   const [annotation, setAnnotation] = useState(() => {
     try { return localStorage.getItem(`mol-note-${plan.id}`) || ""; } catch { return ""; }
@@ -89,20 +108,23 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
   const visual = domainVisual(plan.domain);
   const materials = plan.materials;
 
-  // Resolve CIDs for any material without one
+  // Resolve CIDs directly from PubChem for any material missing one
   useEffect(() => {
     let active = true;
     const toResolve = materials.filter(m => !m.pubchemCid).map(m => m.name);
     if (!toResolve.length) return;
 
-    Promise.all(toResolve.map(async name => {
-      try {
-        const res = await fetchCompoundResolution(name);
-        return [resolvedKey(name), res] as const;
-      } catch { return null; }
-    })).then(results => {
+    setResolvingNames(new Set(toResolve));
+
+    Promise.all(
+      toResolve.map(async name => {
+        const cid = await pubchemCidByName(name);
+        return cid ? ([resolvedKey(name), cid] as const) : null;
+      })
+    ).then(results => {
       if (!active) return;
-      setResolvedByName(prev => {
+      setResolvingNames(new Set());
+      setResolvedCids(prev => {
         const next = { ...prev };
         for (const r of results) if (r) next[r[0]] = r[1];
         return next;
@@ -111,19 +133,19 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
     return () => { active = false; };
   }, [plan.id, materials]);
 
-  // Enrich materials with resolved CIDs
+  // Merge static CIDs from plan with dynamically resolved ones
   const enriched = useMemo(() => materials.map(m => {
-    const resolved = resolvedByName[resolvedKey(m.name)];
-    const cid = m.pubchemCid ?? resolved?.pubchemCid ?? null;
+    const cid = m.pubchemCid ?? resolvedCids[resolvedKey(m.name)] ?? null;
     return { ...m, cid };
-  }), [materials, resolvedByName]);
+  }), [materials, resolvedCids]);
 
-  // Best molecule for 3D: first small-molecule with a CID
+  const isResolving = resolvingNames.size > 0;
+
+  // Best compound for 3D viewer: first small molecule with a confirmed CID
   const best3DCompound = useMemo(() => {
-    return enriched.find(m => m.cid && likelyHas3D(m.name, m.molecularFormula)) ?? null;
+    return enriched.find(m => m.cid != null && likelyHas3D(m.name, m.molecularFormula)) ?? null;
   }, [enriched]);
 
-  // Track active 3D compound (defaults to best)
   const current3D = active3D ?? (best3DCompound ? { cid: best3DCompound.cid!, name: best3DCompound.name } : null);
 
   return (
@@ -143,7 +165,7 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
       </div>
 
       <div className="p-4 space-y-5">
-        {/* 3D Viewer — always full width, shows switchable compound */}
+        {/* 3D Viewer — full width, shows best available compound */}
         {current3D ? (
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -165,14 +187,19 @@ export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
             </div>
             <Molecule3DViewer cid={current3D.cid} label={current3D.name} className="w-full" />
             <p className="mt-1.5 text-[10px] text-muted-foreground/60">
-              Click any compound below to switch the 3D view · Drag to rotate · Scroll to zoom
+              Click any compound tile below to switch the 3D view · Drag to rotate · Scroll to zoom
             </p>
+          </div>
+        ) : isResolving ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 p-5 flex items-center justify-center gap-3">
+            <Loader2 className="size-4 animate-spin text-primary" />
+            <p className="text-[11px] text-muted-foreground">Resolving compound identities from PubChem…</p>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border bg-muted/20 p-5 text-center">
             <FlaskConical className="mx-auto mb-2 size-7 text-muted-foreground/30" />
             <p className="text-[11px] text-muted-foreground">
-              3D structure will appear once compound identities are resolved from PubChem.
+              No 3D structure available — compound names could not be resolved in PubChem.
             </p>
           </div>
         )}
