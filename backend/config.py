@@ -2,15 +2,15 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    parser_provider: str = "groq"                           # PARSER_PROVIDER: groq|google|auto
-    parser_model_groq: str = "llama-3.3-70b-versatile"      # PARSER_MODEL_GROQ
-    parser_model_google: str = "gemini-2.0-flash"           # PARSER_MODEL_GOOGLE
+    parser_provider: str = "vertex"                         # PARSER_PROVIDER: vertex
+    parser_model_groq: str = "llama-3.3-70b-versatile"      # legacy
+    parser_model_google: str = "gemini-2.0-flash"           # legacy
     groq_api_key: str = ""                                  # GROQ_API_KEY
     groq_api_keys_raw: str = ""                             # GROQ_API_KEYS (comma-separated for rotation)
     glm_api_key: str = ""                                   # GLM_API_KEY (zhipu AI, plan generation)
     glm_model: str = "glm-4.5-air"                          # GLM_MODEL (EdgeQuake OpenAI-compatible model)
     google_api_key: str = ""                                # GOOGLE_API_KEY
-    plan_provider: str = "auto"                             # PLAN_PROVIDER: google|groq|glm|auto
+    plan_provider: str = "vertex"                           # PLAN_PROVIDER: vertex
     plan_enable_google_fallback: bool = False               # PLAN_ENABLE_GOOGLE_FALLBACK (default false for production SSE flow)
     plan_model_google: str = "gemini-2.5-flash"             # PLAN_MODEL_GOOGLE
     plan_model_groq: str = "llama-3.3-70b-versatile"        # PLAN_MODEL_GROQ
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         return keys
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", ".env.local")
         extra = "ignore"
 
 

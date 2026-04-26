@@ -79,9 +79,49 @@ describe("ContextStore novelty panel", () => {
       />,
     );
 
-    expect(screen.getByText("Literature and Novelty")).toBeInTheDocument();
+    expect(screen.getByText("Novelty Signal")).toBeInTheDocument();
     expect(screen.getByText("Kelly et al. (1998)")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Kelly et al\. \(1998\)/i });
     expect(link).toHaveAttribute("href", "https://example.com/a");
+  });
+
+  it("shows explicit fallback copy when review adaptations are empty", () => {
+    const plan = makePlan();
+    render(
+      <ContextStore
+        plan={plan}
+        reviews={[] as ReviewRecord[]}
+        onReviewAdded={async () => {}}
+        budgetRegion={region}
+        onBudgetRegionChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("0 applied")).toBeInTheDocument();
+    expect(screen.getByText("Add a scientist review and regenerate to see improvements.")).toBeInTheDocument();
+  });
+
+  it("renders adaptations list when backend supplies entries", () => {
+    const plan = makePlan();
+    plan.reviewAdaptations = [
+      {
+        section: "Protocol",
+        change: "Added randomization and control gating",
+        impact: "Reduces bias in treatment/control comparison.",
+      },
+    ];
+
+    render(
+      <ContextStore
+        plan={plan}
+        reviews={[] as ReviewRecord[]}
+        onReviewAdded={async () => {}}
+        budgetRegion={region}
+        onBudgetRegionChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("1 applied")).toBeInTheDocument();
+    expect(screen.getByText("Added randomization and control gating")).toBeInTheDocument();
   });
 });

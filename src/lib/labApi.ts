@@ -37,6 +37,8 @@ export type ProtocolStep = {
   source: string;
   sourceUri?: string;
   sourceTitle?: string;
+  sourceConfidence?: number;
+  sourceEvidence?: string;
   riskLevel?: "low" | "med" | "high";
   riskNote?: string;
   validationChecks: string[];
@@ -61,6 +63,13 @@ export type MaterialItem = {
   canonicalSmiles?: string;
   iupacName?: string;
   sourceUri?: string;
+  pricingSource?: string;
+  pricingTimestamp?: string;
+  pricingConfidence?: number;
+  pricingSourceUrl?: string;
+  pricingRawTitle?: string;
+  sourceConfidence?: number;
+  sourceEvidence?: string;
 };
 
 export type TimelinePhase = {
@@ -239,6 +248,29 @@ export type ApiContract = {
   path: string;
   purpose: string;
 };
+
+export type DemoHypothesis = {
+  title: string;
+  hypothesis: string;
+};
+
+export const demoHypotheses: DemoHypothesis[] = [
+  {
+    title: "Cell Biology",
+    hypothesis:
+      "Trehalose at 200 mM improves post-thaw viability of HeLa cells by at least 20% versus standard 10% DMSO control under identical freezing and thawing conditions.",
+  },
+  {
+    title: "Diagnostics",
+    hypothesis:
+      "A paper-based electrochemical biosensor with anti-CRP antibodies detects C-reactive protein below 0.5 mg/L within 10 minutes compared to ELISA in diluted human serum samples.",
+  },
+  {
+    title: "Pharmacology",
+    hypothesis:
+      "Administering 5 mg/kg of L-DOPA to C57BL/6 mice improves motor function by 30% compared to saline vehicle within 8 days under controlled dosing conditions.",
+  },
+];
 
 export type KnowledgeGraphContext = {
   experimentId: string;
@@ -584,66 +616,44 @@ export function formatCurrency(amount: number, region: BudgetRegion) {
 }
 
 export function scientistGapsForPlan(plan: ExperimentPlan) {
-  const shared = [
-    "No statistical power or replicate strategy is shown, so a scientist cannot judge whether the validation thresholds are actually testable.",
-    "The plan still lacks biosafety, ethics, waste-disposal, and instrument-compatibility checks that many labs need before they can start.",
-    "Supplier and protocol references are present, but the system still does not prove that the exact reagent format, assay chemistry, and local equipment match the intended workflow.",
-  ];
+  const gaps: string[] = [];
 
-  if (plan.domain.includes("Cell Biology")) {
-    return [
-      ...shared,
-      "Cryopreservation parameters like cooling rate, thaw temperature, and post-thaw recovery media are still under-specified for a real cell-biology handoff.",
-    ];
+  if (plan.materials.some(m => !m.catalogNumber || m.catalogNumber.includes("TBD") || !m.supplier || m.catalogNumber === "UNVERIFIED")) {
+    gaps.push("Unresolved material procurement: Some reagents are missing exact catalog numbers or supplier verification.");
   }
-
-  if (plan.domain.includes("Gut")) {
-    return [
-      ...shared,
-      "Animal randomization, blinding, welfare approval, and cage-effect controls need to be explicit before this would pass a serious in vivo review.",
-    ];
+  if (!plan.validation.decisionGates || plan.validation.decisionGates.length === 0) {
+    gaps.push("Missing decision gates: No clear go/no-go criteria defined in the validation plan.");
   }
-
-  if (plan.domain.includes("Diagnostics")) {
-    return [
-      ...shared,
-      "Matrix effects, clinical comparator sample counts, and false-positive handling are still not specified tightly enough for translational diagnostics work.",
-    ];
+  if (!plan.validation.failureCriteria || plan.validation.failureCriteria.length === 0) {
+    gaps.push("Missing failure criteria: The validation approach lacks explicit negative outcomes or failure thresholds.");
   }
-
-  if (plan.domain.includes("Electrochemistry")) {
-    return [
-      ...shared,
-      "Electrode geometry, reactor volume, gas-transfer setup, and reference-electrode calibration cadence are still too loose for a real electrochemical build.",
-    ];
+  if (plan.steps.length < 8) {
+    gaps.push("Protocol depth too low: The step-by-step protocol is likely too brief for a fully reproducible experiment.");
   }
-
-  return shared;
+  if (!plan.sources || plan.sources.length < 3) {
+    gaps.push("Low citation evidence: The plan is supported by very few literature sources.");
+  }
+  
+  if (gaps.length === 0) {
+    gaps.push("The plan is highly detailed, but manual review of specific concentration ranges and exact timing is recommended before execution.");
+  }
+  
+  return gaps;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let detail = "";
-    try {
-      const body = await response.json();
-      if (body && typeof body === "object" && "detail" in body) {
-        detail = `: ${String((body as { detail?: unknown }).detail)}`;
-      }
-    } catch {
-      // Ignore parse failures and keep the status-only message.
-    }
-    throw new Error(`Request failed with status ${response.status}${detail}`);
+    throw new Error(`Request failed with status ${response.status}`);
   }
 
   return response.json() as Promise<T>;
 }
 
-const API_TIMEOUT_MS = 4500;
-const PLAN_API_TIMEOUT_MS = 12000;
+const API_TIMEOUT_MS = 20000;
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
     return await fetch(input, {
@@ -652,9 +662,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(
-        `Local API timed out after ${timeoutMs / 1000}s. Check backend logs for slow parse/literature steps and ensure the Python API is running on port 8787.`,
-      );
+      throw new Error(`Local API timed out after ${API_TIMEOUT_MS / 1000}s. Make sure the mock API is running on port 8787.`);
     }
 
     throw new Error("Local API is unavailable on port 8787. Start it with `npm run api` or use `npm run dev` to launch both services.");
@@ -664,19 +672,117 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
 }
 
 export async function fetchExperimentPlan(hypothesis: string): Promise<{ experiment: ExperimentPlan }> {
-  const response = await fetchWithTimeout(
-    "/api/experiments/plan",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ hypothesis }),
+  const response = await fetchWithTimeout("/api/experiments/plan", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
     },
-    PLAN_API_TIMEOUT_MS,
-  );
+    body: JSON.stringify({ hypothesis }),
+  });
 
   return readJson<{ experiment: ExperimentPlan }>(response);
+}
+
+export type Objection = {
+  section: string;
+  claim: string;
+  objection: string;
+  severity: "fatal" | "major" | "minor";
+};
+
+export type QualityScores = {
+  faithfulness: number;
+  step_coverage: number;
+  entity_precision: number;
+  retrieval_recall_at_10: number;
+  convergence_score: number;
+  composite: number;
+};
+
+export type PlanSSEEvent =
+  | { type: "progress"; stage: string; message: string; pct: number }
+  | { type: "qc_complete"; signal: "not_found" | "similar_work_exists" | "exact_match_found" | "qc_unavailable"; refs?: SourceReference[]; references?: SourceReference[]; summary?: string; score?: number }
+  | { type: "graph_ready"; workspace_id: string; paper_count: number; domain: string }
+  | { type: "agent_draft"; agent: string; section: string; content: any; round: 1 }
+  | { type: "objections"; items: Objection[]; fatal_count: number }
+  | { type: "agent_revision"; agent: string; section: string; content: any; round: 3 }
+  | { type: "plan_complete"; plan: { experiment: ExperimentPlan } }
+  | { type: "metrics_complete"; scores: QualityScores }
+  | { type: "error"; message: string; stage: string };
+
+export function fetchExperimentPlanStream(hypothesis: string, onEvent: (event: PlanSSEEvent) => void, onError: (err: any) => void, onComplete: () => void): () => void {
+  const controller = new AbortController();
+
+  const run = async () => {
+    try {
+      const response = await fetch("/api/experiments/plan/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hypothesis }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream request failed with status ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let currentEventName = "";
+      let completed = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
+
+        for (const rawChunk of chunks) {
+          const lines = rawChunk.split("\n");
+          currentEventName = "";
+          const dataLines: string[] = [];
+
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              currentEventName = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              dataLines.push(line.slice(5).trim());
+            }
+          }
+
+          if (!currentEventName || dataLines.length === 0) continue;
+          try {
+            const payload = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+            const event = { type: currentEventName, ...payload } as PlanSSEEvent;
+            onEvent(event);
+
+            if (event.type === "metrics_complete" || event.type === "error") {
+              completed = true;
+            }
+          } catch (err) {
+            console.error("Failed to parse SSE event payload", err);
+          }
+        }
+
+        if (completed) {
+          controller.abort();
+          break;
+        }
+      }
+
+      onComplete();
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        onError(err);
+      }
+    }
+  };
+
+  void run();
+  return () => controller.abort();
 }
 
 export async function fetchChatReply(

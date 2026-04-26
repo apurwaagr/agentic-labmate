@@ -243,6 +243,11 @@ export function ProtocolCard({ steps, materials = [], planId }: { steps: Protoco
                           {step.source}
                         </span>
                       )}
+                      {typeof step.sourceConfidence === "number" && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2 py-0.5 text-[10px] text-primary">
+                          Evidence {Math.round(step.sourceConfidence * 100)}%
+                        </span>
+                      )}
                     </div>
                   </div>
                   <ChevronDown className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
@@ -312,6 +317,12 @@ export function ProtocolCard({ steps, materials = [], planId }: { steps: Protoco
                             <li key={point} className="text-[11px] leading-snug text-foreground/80">• {point}</li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    {step.sourceEvidence && (
+                      <div className="rounded-lg border border-primary/20 bg-primary-soft/35 px-2.5 py-2">
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/70">Lineage evidence</div>
+                        <p className="text-[11px] leading-snug text-foreground/80">{step.sourceEvidence}</p>
                       </div>
                     )}
 

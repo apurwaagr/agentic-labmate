@@ -10,10 +10,11 @@ type Message = {
 };
 
 const starterPrompts = [
-  "What is the weakest part of this plan?",
-  "Which validation gate is most likely to fail first?",
-  "Which materials are on the critical path?",
+  "Which validation gate is most likely to fail first, and why?",
+  "Show the strongest evidence-backed claim in this protocol.",
+  "Which materials are unresolved for pricing and procurement?",
   "How did prior scientist reviews change this plan?",
+  "What is the weakest part of this plan?",
 ];
 
 async function buildFallbackReply(question: string, plan: ExperimentPlan, reviews: ReviewRecord[]) {

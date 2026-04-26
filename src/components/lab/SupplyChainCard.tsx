@@ -8,6 +8,7 @@ const statusBadge: Record<string, string> = {
 };
 
 export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; budgetRegion: BudgetRegion }) {
+  const unresolvedCount = plan.materials.filter((item) => (item.pricingSource || "").toLowerCase().includes("unresolved")).length;
   return (
     <section className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
       <header className="flex flex-col gap-2 border-b border-border p-5 xl:flex-row xl:items-center xl:justify-between">
@@ -22,6 +23,11 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
           Total {formatCurrency(adjustedBudgetAmount(plan.budget.totalUsd, budgetRegion, "total"), budgetRegion)}
         </div>
       </header>
+      {unresolvedCount > 0 && (
+        <div className="border-b border-danger/25 bg-danger-soft/50 px-4 py-2 text-[11px] text-danger">
+          {unresolvedCount} material{unresolvedCount === 1 ? "" : "s"} still have unresolved procurement pricing.
+        </div>
+      )}
 
       {/* Compact table */}
       <div className="overflow-x-auto">
@@ -33,6 +39,7 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
               <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Qty</th>
               <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Lead</th>
               <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground text-right">Unit</th>
+              <th className="px-3 py-2.5 font-semibold text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Pricing trust</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -60,6 +67,21 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
                 </td>
                 <td className="px-3 py-2.5 text-right font-semibold text-foreground">
                   {formatCurrency(adjustedBudgetAmount(item.unitCostUsd, budgetRegion, "reagents"), budgetRegion)}
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="space-y-1">
+                    <div className="text-[10px] text-foreground/85">
+                      {item.pricingSource || "unknown source"}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      confidence {Math.round((item.pricingConfidence ?? item.sourceConfidence ?? 0) * 100)}%
+                    </div>
+                    {(item.pricingSource || "").toLowerCase().includes("unresolved") && (
+                      <span className="inline-flex rounded-full border border-danger/30 bg-danger-soft px-1.5 py-0.5 text-[9px] font-semibold text-danger">
+                        unresolved
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

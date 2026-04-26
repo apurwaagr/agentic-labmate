@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 from .literature_qc import check_literature
 from .parser import parse_user_input
+from .pricing import FilePriceCache, PricingResolver
 from .schemas import ParsedHypothesis
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ def _load_knowledge_base() -> Dict[str, Any]:
 
 
 _KNOWLEDGE_BASE = _load_knowledge_base()
+_PRICE_CACHE = FilePriceCache(Path(__file__).parent.parent / "data" / "price_cache.json", ttl_seconds=86400)
+_PRICING_RESOLVER = PricingResolver(_PRICE_CACHE)
 
 
 def _domain_profile(domain: str) -> Dict[str, Any]:
@@ -144,76 +147,113 @@ def _build_materials(parsed: ParsedHypothesis, profile: Dict[str, Any], complexi
     # Try to find intervention in knowledge base
     intervention_kb = _find_reagent_in_kb(parsed.intervention)
     if intervention_kb:
+        intervention_quote = _PRICING_RESOLVER.resolve(
+            name=intervention_kb["name"],
+            supplier=intervention_kb["supplier"],
+            catalog_number=intervention_kb["catalogNumber"],
+            fallback_unit_cost_usd=float(intervention_kb["unitCostUsd"]),
+            fallback_source="seeded_kb",
+        )
         materials.append({
             "name": intervention_kb["name"],
             "catalogNumber": intervention_kb["catalogNumber"],
             "supplier": intervention_kb["supplier"],
             "quantity": parsed.target_quantity or "Protocol-defined",
-            "unitCostUsd": intervention_kb["unitCostUsd"],
+            "unitCostUsd": intervention_quote.unit_cost_usd,
             "leadTime": "4-10 days",
             "status": "order",
             "notes": intervention_kb["notes"],
             "sourceConfidence": 0.95,
-            "sourceEvidence": f"Catalog match from {intervention_kb['supplier']}"
+            "sourceEvidence": f"Catalog match from {intervention_kb['supplier']}",
+            **intervention_quote.to_material_fields(),
         })
     else:
-        intervention_cost = max(80, int(profile["base_reagents"] * (0.45 + complexity * 0.5)))
+        intervention_quote = _PRICING_RESOLVER.resolve(
+            name=parsed.intervention,
+            supplier="",
+            catalog_number="",
+            fallback_unit_cost_usd=0.0,
+            fallback_source="unresolved",
+        )
         materials.append({
             "name": parsed.intervention,
-            "catalogNumber": "TBD",
-            "supplier": "Select validated supplier",
+            "catalogNumber": "",
+            "supplier": "",
             "quantity": parsed.target_quantity or "Protocol-defined",
-            "unitCostUsd": intervention_cost,
+            "unitCostUsd": intervention_quote.unit_cost_usd,
             "leadTime": "4-10 days",
             "status": "order",
-            "notes": "Confirm grade/purity and storage constraints before ordering.",
-            "sourceConfidence": 0.42,
-            "sourceEvidence": "Heuristic from parsed intervention."
+            "notes": "No reliable supplier quote available yet; requires vendor resolution before procurement.",
+            "sourceConfidence": 0.25,
+            "sourceEvidence": "Pricing unresolved after live/cache/seeded lookup chain.",
+            **intervention_quote.to_material_fields(),
         })
     
     # Try to find subject in knowledge base
     subject_kb = _find_reagent_in_kb(parsed.subject)
     if subject_kb:
+        subject_quote = _PRICING_RESOLVER.resolve(
+            name=subject_kb["name"],
+            supplier=subject_kb["supplier"],
+            catalog_number=subject_kb["catalogNumber"],
+            fallback_unit_cost_usd=float(subject_kb["unitCostUsd"]),
+            fallback_source="seeded_kb",
+        )
         materials.append({
             "name": subject_kb["name"],
             "catalogNumber": subject_kb["catalogNumber"],
             "supplier": subject_kb["supplier"],
             "quantity": "Per protocol",
-            "unitCostUsd": subject_kb["unitCostUsd"],
+            "unitCostUsd": subject_quote.unit_cost_usd,
             "leadTime": "2-7 days",
             "status": "in-stock",
             "notes": subject_kb["notes"],
             "sourceConfidence": 0.95,
-            "sourceEvidence": f"Catalog match from {subject_kb['supplier']}"
+            "sourceEvidence": f"Catalog match from {subject_kb['supplier']}",
+            **subject_quote.to_material_fields(),
         })
     else:
-        subject_cost = max(40, int(profile["base_reagents"] * (0.25 + complexity * 0.35)))
+        subject_quote = _PRICING_RESOLVER.resolve(
+            name=parsed.subject,
+            supplier="",
+            catalog_number="",
+            fallback_unit_cost_usd=0.0,
+            fallback_source="unresolved",
+        )
         materials.append({
             "name": parsed.subject,
-            "catalogNumber": "N/A",
-            "supplier": "In-house / reference supplier",
+            "catalogNumber": "",
+            "supplier": "",
             "quantity": "Per protocol",
-            "unitCostUsd": subject_cost,
+            "unitCostUsd": subject_quote.unit_cost_usd,
             "leadTime": "2-7 days",
             "status": "in-stock",
-            "notes": "Validate model/system specification against protocol assumptions.",
-            "sourceConfidence": 0.55,
-            "sourceEvidence": "Derived from parsed subject."
+            "notes": "No reliable supplier quote available yet; requires source validation.",
+            "sourceConfidence": 0.25,
+            "sourceEvidence": "Pricing unresolved after live/cache/seeded lookup chain.",
+            **subject_quote.to_material_fields(),
         })
     
     # Consumables
-    consumables_cost = max(35, int(profile["base_reagents"] * (0.2 + complexity * 0.25)))
+    consumables_quote = _PRICING_RESOLVER.resolve(
+        name="Assay and controls consumables",
+        supplier="",
+        catalog_number="",
+        fallback_unit_cost_usd=0.0,
+        fallback_source="unresolved",
+    )
     materials.append({
         "name": "Assay and controls consumables",
-        "catalogNumber": "TBD",
-        "supplier": "Preferred lab vendor",
+        "catalogNumber": "",
+        "supplier": "",
         "quantity": "Per run",
-        "unitCostUsd": consumables_cost,
+        "unitCostUsd": consumables_quote.unit_cost_usd,
         "leadTime": "2-5 days",
         "status": "order",
-        "notes": "Include replicates and QA/QC controls.",
-        "sourceConfidence": 0.48,
-        "sourceEvidence": "Template consumables based on run structure."
+        "notes": "Consumable quote not resolved from live or seeded data; add vendor quote before execution.",
+        "sourceConfidence": 0.25,
+        "sourceEvidence": "Pricing unresolved after live/cache/seeded lookup chain.",
+        **consumables_quote.to_material_fields(),
     })
     
     return materials
@@ -266,7 +306,13 @@ def _build_benchmark(total_cost: int, total_days: int, sustainability: int) -> L
 
 
 def _novelty_to_frontend(novelty_signal: str) -> str:
-    return {"not_found": "not found", "similar_work_exists": "similar work exists", "exact_match_found": "exact match found", "unavailable": "search unavailable"}.get(novelty_signal, "similar work exists")
+    return {
+        "not_found": "not found",
+        "similar_work_exists": "similar work exists",
+        "exact_match_found": "exact match found",
+        # Keep frontend enum strict; "unavailable" downgrades to similar work.
+        "unavailable": "similar work exists",
+    }.get(novelty_signal, "similar work exists")
 
 
 def _safe_parse(hypothesis_text: str) -> ParsedHypothesis:
@@ -341,7 +387,12 @@ def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -
     benchmark = _build_benchmark(budget["totalUsd"], total_days, sustainability_value)
 
     has_real_refs = bool(getattr(literature, "references", []) and getattr(literature, "total_results", 0) > 0)
-    placeholder_materials = sum(1 for m in materials if str(m.get("catalogNumber", "")).upper() in {"TBD", "N/A"})
+    placeholder_materials = sum(
+        1
+        for m in materials
+        if str(m.get("catalogNumber", "")).strip() == ""
+        or str(m.get("catalogNumber", "")).upper() in {"TBD", "N/A"}
+    )
     material_conf = max(0.2, min(0.95, citation_confidence - 0.12 * (placeholder_materials / max(len(materials), 1))))
     
     # Try to find matching protocol in knowledge base
@@ -433,7 +484,7 @@ def build_experiment_plan(hypothesis_text: str, reviews: List[Dict[str, Any]]) -
     evidence_sources.append({
         "title": "Hypothesis parse extraction",
         "uri": "",
-        "source": "Vertex/Groq parser from user input",
+        "source": "Vertex parser from user input",
     })
 
     response = {

@@ -11,13 +11,20 @@ import { ComparisonCard } from "@/components/lab/ComparisonCard";
 import { Chatbot } from "@/components/lab/Chatbot";
 import { PhaseTracker } from "@/components/lab/PhaseTracker";
 import { ValidationCard } from "@/components/lab/ValidationCard";
+import { CouncilTracePanel } from "@/components/lab/CouncilTracePanel";
+import { CouncilAgentPanels } from "@/components/lab/CouncilAgentPanels";
+import { CouncilMetricsCard } from "@/components/lab/CouncilMetricsCard";
 import {
   budgetRegionByCode,
-  fetchExperimentPlan,
+  demoHypotheses,
+  fetchExperimentPlanStream,
   fetchReviews,
   type BudgetRegion,
   type ExperimentPlan,
   type ReviewRecord,
+  type PlanSSEEvent,
+  type QualityScores,
+  type Objection,
 } from "@/lib/labApi";
 
 type LabProject = ProjectListItem & {
@@ -328,6 +335,11 @@ function buildReferenceProjectBundle() {
 
 const PROJECTS_STORAGE_KEY = "agentic-labmate-projects";
 const PLANS_STORAGE_KEY = "agentic-labmate-plans";
+const STREAM_EVENTS_STORAGE_KEY = "agentic-labmate-stream-events";
+const STREAM_DRAFTS_STORAGE_KEY = "agentic-labmate-stream-drafts";
+const STREAM_REVISIONS_STORAGE_KEY = "agentic-labmate-stream-revisions";
+const STREAM_OBJECTIONS_STORAGE_KEY = "agentic-labmate-stream-objections";
+const STREAM_METRICS_STORAGE_KEY = "agentic-labmate-stream-metrics";
 const ACTIVE_PROJECT_STORAGE_KEY = "agentic-labmate-active-project";
 const BUDGET_REGION_STORAGE_KEY = "agentic-labmate-budget-region";
 
@@ -377,34 +389,35 @@ const Index = () => {
   const [budgetRegion, setBudgetRegion] = useState<BudgetRegion>(budgetRegionByCode("DE"));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedAutoGenerationProjects, setFailedAutoGenerationProjects] = useState<Record<string, true>>({});
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [activeHypothesisDraft, setActiveHypothesisDraft] = useState("");
   const logIntervalRef = useRef<number | null>(null);
+
+  // Council Stream State
+  const [streamEvents, setStreamEvents] = useState<Record<string, PlanSSEEvent[]>>({});
+  const [agentDrafts, setAgentDrafts] = useState<Record<string, Record<string, any>>>({});
+  const [agentRevisions, setAgentRevisions] = useState<Record<string, Record<string, any>>>({});
+  const [objectionsByProject, setObjectionsByProject] = useState<Record<string, Objection[]>>({});
+  const [metricsByProject, setMetricsByProject] = useState<Record<string, QualityScores>>({});
+
   // Prevents save effects from overwriting localStorage before the initial load has completed.
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     try {
-      const storedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
-      const storedActiveId = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-      const storedPlans = localStorage.getItem(PLANS_STORAGE_KEY);
-
-      if (storedProjects) {
-        const parsed = JSON.parse(storedProjects) as LabProject[];
-        setProjects(parsed);
-        if (parsed.length > 0) {
-          setComposerOpen(false);
-        }
-      }
-
-      if (storedPlans) {
-        setPlansByProject(JSON.parse(storedPlans) as Record<string, ExperimentPlan>);
-      }
-
-      if (storedActiveId) {
-        setActiveProjectId(storedActiveId);
-      }
+      // MVP mode: always start from a clean workspace on load.
+      // Keep only presentation preferences (e.g., budget region).
+      setProjects([]);
+      setPlansByProject({});
+      setStreamEvents({});
+      setAgentDrafts({});
+      setAgentRevisions({});
+      setObjectionsByProject({});
+      setMetricsByProject({});
+      setActiveProjectId(null);
+      setComposerOpen(true);
 
       const storedBudgetRegion = localStorage.getItem(BUDGET_REGION_STORAGE_KEY);
       if (storedBudgetRegion) {
@@ -426,6 +439,31 @@ const Index = () => {
     if (!initialized) return;
     localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(plansByProject));
   }, [initialized, plansByProject]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STREAM_EVENTS_STORAGE_KEY, JSON.stringify(streamEvents));
+  }, [initialized, streamEvents]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STREAM_DRAFTS_STORAGE_KEY, JSON.stringify(agentDrafts));
+  }, [initialized, agentDrafts]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STREAM_REVISIONS_STORAGE_KEY, JSON.stringify(agentRevisions));
+  }, [initialized, agentRevisions]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STREAM_OBJECTIONS_STORAGE_KEY, JSON.stringify(objectionsByProject));
+  }, [initialized, objectionsByProject]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    localStorage.setItem(STREAM_METRICS_STORAGE_KEY, JSON.stringify(metricsByProject));
+  }, [initialized, metricsByProject]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -463,12 +501,18 @@ const Index = () => {
 
   // Auto-generate when project has no plan (new project or plan was lost).
   useEffect(() => {
-    if (activeProject && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
+    if (
+      activeProject &&
+      !plansByProject[activeProject.id] &&
+      activeProject.hypothesis &&
+      !loading &&
+      !failedAutoGenerationProjects[activeProject.id]
+    ) {
       void generateForProject(activeProject.id, activeProject.hypothesis);
     }
     // generateForProject is intentionally excluded to avoid retrigger loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProject?.id, plansByProject, loading]);
+  }, [activeProject?.id, plansByProject, loading, failedAutoGenerationProjects]);
 
   // Load reviews from server whenever the active plan changes (covers page reloads).
   useEffect(() => {
@@ -539,14 +583,30 @@ const Index = () => {
     setProjects((current) => current.map((project) => (project.id === projectId ? updater(project) : project)));
   }
 
-  async function generateForProject(projectId: string, hypothesis: string) {
+  function generateForProject(projectId: string, hypothesis: string) {
     const targetProject = projects.find((project) => project.id === projectId);
-    if (!targetProject) {
-      return;
-    }
+    if (!targetProject) return Promise.resolve();
 
     setLoading(true);
     setError(null);
+    setFailedAutoGenerationProjects((curr) => {
+      if (!curr[projectId]) return curr;
+      const next = { ...curr };
+      delete next[projectId];
+      return next;
+    });
+
+    // Reset stream state for this project
+    setStreamEvents((curr) => ({ ...curr, [projectId]: [] }));
+    setAgentDrafts((curr) => ({ ...curr, [projectId]: {} }));
+    setAgentRevisions((curr) => ({ ...curr, [projectId]: {} }));
+    setObjectionsByProject((curr) => ({ ...curr, [projectId]: [] }));
+    setMetricsByProject((curr) => {
+      const next = { ...curr };
+      delete next[projectId];
+      return next;
+    });
+
     startLogAnimation(targetProject.name);
     updateProject(projectId, (project) => ({
       ...project,
@@ -555,34 +615,76 @@ const Index = () => {
       updatedAt: new Date().toISOString(),
     }));
 
-    try {
-      const planResponse = await fetchExperimentPlan(hypothesis);
-      const reviewResponse = await fetchReviews(planResponse.experiment.id);
-
-      setPlansByProject((current) => ({ ...current, [projectId]: planResponse.experiment }));
-      setReviewsByProject((current) => ({ ...current, [projectId]: reviewResponse }));
-
-      updateProject(projectId, (project) => ({
-        ...project,
+    return new Promise<void>((resolve, reject) => {
+      let latestPlan: ExperimentPlan | null = null;
+      
+      const cleanup = fetchExperimentPlanStream(
         hypothesis,
-        status: "planned",
-        domain: planResponse.experiment.domain,
-        novelty: planResponse.experiment.novelty.signal,
-        updatedAt: new Date().toISOString(),
-      }));
+        (event) => {
+          setStreamEvents((curr) => ({
+            ...curr,
+            [projectId]: [...(curr[projectId] || []), event],
+          }));
 
-      finalizeLogs("done", targetProject.name);
-    } catch (generationError) {
-      updateProject(projectId, (project) => ({
-        ...project,
-        status: "error",
-        updatedAt: new Date().toISOString(),
-      }));
-      setError(generationError instanceof Error ? generationError.message : "Could not generate the experiment plan.");
-      finalizeLogs("error", targetProject.name);
-    } finally {
-      setLoading(false);
-    }
+          if (event.type === "agent_draft") {
+            setAgentDrafts((curr) => ({
+              ...curr,
+              [projectId]: { ...curr[projectId], [event.section]: event.content },
+            }));
+          } else if (event.type === "objections") {
+            setObjectionsByProject((curr) => ({
+              ...curr,
+              [projectId]: [...(curr[projectId] || []), ...event.items],
+            }));
+          } else if (event.type === "agent_revision") {
+            setAgentRevisions((curr) => ({
+              ...curr,
+              [projectId]: { ...curr[projectId], [event.section]: event.content },
+            }));
+          } else if (event.type === "metrics_complete") {
+            setMetricsByProject((curr) => ({
+              ...curr,
+              [projectId]: event.scores,
+            }));
+          } else if (event.type === "plan_complete") {
+            latestPlan = event.plan.experiment;
+            setPlansByProject((curr) => ({ ...curr, [projectId]: latestPlan! }));
+            updateProject(projectId, (project) => ({
+              ...project,
+              hypothesis,
+              status: "planned",
+              domain: latestPlan!.domain,
+              novelty: latestPlan!.novelty?.signal || "unknown",
+              updatedAt: new Date().toISOString(),
+            }));
+          }
+        },
+        (err) => {
+          setFailedAutoGenerationProjects((curr) => ({ ...curr, [projectId]: true }));
+          updateProject(projectId, (project) => ({
+            ...project,
+            status: "error",
+            updatedAt: new Date().toISOString(),
+          }));
+          setError("Failed to stream experiment plan.");
+          finalizeLogs("error", targetProject.name);
+          setLoading(false);
+          reject(err);
+        },
+        () => {
+          if (latestPlan) {
+            fetchReviews(latestPlan.id)
+              .then((reviews) => {
+                setReviewsByProject((curr) => ({ ...curr, [projectId]: reviews }));
+              })
+              .catch(() => {});
+          }
+          finalizeLogs("done", targetProject.name);
+          setLoading(false);
+          resolve();
+        }
+      );
+    });
   }
 
   async function handleCreateProject() {
@@ -660,6 +762,31 @@ const Index = () => {
       return next;
     });
     setReviewsByProject((current) => {
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    setStreamEvents((current) => {
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    setAgentDrafts((current) => {
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    setAgentRevisions((current) => {
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    setObjectionsByProject((current) => {
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    setMetricsByProject((current) => {
       const next = { ...current };
       delete next[projectId];
       return next;
@@ -814,6 +941,28 @@ const Index = () => {
                           className="min-h-40 w-full rounded-2xl border border-border bg-panel px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30"
                           placeholder="Enter the intervention, outcome threshold, mechanism, and control condition..."
                         />
+                        <div className="mt-2">
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Demo starters
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {demoHypotheses.map((item) => (
+                              <button
+                                key={item.title}
+                                type="button"
+                                onClick={() => {
+                                  if (!draftName.trim()) {
+                                    setDraftName(`${item.title} Demo`);
+                                  }
+                                  setDraftHypothesis(item.hypothesis);
+                                }}
+                                className="rounded-full border border-border bg-panel px-2.5 py-1 text-[10px] text-foreground/80 hover:border-primary/30 hover:bg-primary-soft"
+                              >
+                                {item.title}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3">
@@ -996,10 +1145,20 @@ const Index = () => {
 
             {loading && (
               <section className="rounded-xl border border-border bg-panel p-4 shadow-sm">
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-4">
                   <Loader2 className="size-4 animate-spin text-primary" />
                   Planning agent is running retrieval, novelty QC and operational assembly…
                 </div>
+                {activeProject && streamEvents[activeProject.id] && (
+                  <div className="space-y-4 mt-4 border-t border-border pt-4">
+                    <CouncilTracePanel events={streamEvents[activeProject.id] || []} />
+                    <CouncilAgentPanels
+                      drafts={agentDrafts[activeProject.id] || {}}
+                      revisions={agentRevisions[activeProject.id] || {}}
+                      objections={objectionsByProject[activeProject.id] || []}
+                    />
+                  </div>
+                )}
               </section>
             )}
 
@@ -1009,8 +1168,22 @@ const Index = () => {
               </section>
             )}
 
-            {activePlan && (
+            {activePlan && !loading && (
               <>
+                {/* ── Council Results ── */}
+                {activeProject && (streamEvents[activeProject.id]?.length > 0) && (
+                  <div className="space-y-4 mb-4">
+                    {metricsByProject[activeProject.id] && (
+                      <CouncilMetricsCard scores={metricsByProject[activeProject.id]} />
+                    )}
+                    <CouncilAgentPanels
+                      drafts={agentDrafts[activeProject.id] || {}}
+                      revisions={agentRevisions[activeProject.id] || {}}
+                      objections={objectionsByProject[activeProject.id] || []}
+                    />
+                  </div>
+                )}
+
                 {/* ── Tab bar ── */}
                 <div className="flex gap-1 rounded-2xl border border-border bg-panel p-1.5 shadow-sm">
                   {TAB_CONFIG.map((tab) => (

@@ -9,8 +9,9 @@ sys.path.insert(0, str(backend_dir))
 
 # Load environment variables from parent directory .env
 from dotenv import load_dotenv
-env_path = Path(__file__).parent.parent / ".env.local"
-load_dotenv(env_path)
+repo_root = Path(__file__).parent.parent
+load_dotenv(repo_root / ".env")
+load_dotenv(repo_root / ".env.local", override=True)
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -25,18 +26,52 @@ import json
 from config import settings
 from streaming import SSEEventType, sse_event
 
-# In-memory review store shared across the /api/reviews endpoints
-_REVIEWS: List[Dict[str, Any]] = []
+from config import settings
+from streaming import SSEEventType, sse_event
+from storage.sqlite_store import init_db, get_reviews, save_review
 _thread_pool = ThreadPoolExecutor(max_workers=4)
+
+
+def _require_vertex_config() -> None:
+    project_id = (os.environ.get("VERTEX_AI_PROJECT_ID") or "").strip()
+    credentials_path = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+    if not project_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Vertex configuration missing: set VERTEX_AI_PROJECT_ID.",
+        )
+    if not credentials_path:
+        raise HTTPException(
+            status_code=503,
+            detail="Vertex configuration missing: set GOOGLE_APPLICATION_CREDENTIALS to your service account JSON path.",
+        )
+
+
+def _normalize_review_severity(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"low", "minor"}:
+        return "low"
+    if normalized in {"high", "fatal", "critical", "major"}:
+        return "high"
+    return "medium"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Skip EdgeQuake initialization for now - use labmate module instead
-    # from graph import get_eq_client
-    # get_eq_client()  # init singleton on startup
-    # from startup import pre_warm_workspaces
-    # asyncio.create_task(pre_warm_workspaces())
+    # Pre-warm Vertex SDK in the background after startup is fully complete
+    # so the first user request doesn't pay the SDK-load tax. We deliberately
+    # DO NOT block startup on this and swallow any errors.
+    async def _warm() -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(_thread_pool, lambda: __import__("labmate.council", fromlist=["_init_vertex"])._init_vertex())
+        except Exception:
+            pass
+
+    # Initialize SQLite database
+    init_db()
+
+    asyncio.create_task(_warm())
     yield
 
 
@@ -212,7 +247,21 @@ async def api_literature_qc(req: ApiHypothesisRequest):
         return check_literature(parsed)
 
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_thread_pool, _qc)
+    try:
+        result = await asyncio.wait_for(loop.run_in_executor(_thread_pool, _qc), timeout=20.0)
+    except asyncio.TimeoutError:
+        return {
+            "signal": "qc_unavailable",
+            "summary": "Literature QC timed out after 20s. The pipeline will continue without an upfront novelty signal — you can still inspect adjacent prior art via the council trace.",
+            "references": [],
+        }
+    except Exception as exc:
+        return {
+            "signal": "qc_unavailable",
+            "summary": f"Literature QC unavailable: {exc}. Continuing to plan generation.",
+            "references": [],
+        }
+
     refs = [
         {"title": r.title, "uri": r.url, "source": f"{r.authors} ({r.year})" if r.year else r.authors}
         for r in result.references
@@ -226,38 +275,290 @@ async def api_literature_qc(req: ApiHypothesisRequest):
 
 @app.post("/api/experiments/plan")
 async def api_experiments_plan(req: ApiHypothesisRequest):
+    _require_vertex_config()
     from labmate.api_logic import build_experiment_plan
 
     def _build():
-        return build_experiment_plan(req.hypothesis, _REVIEWS)
+        reviews = get_reviews()
+        return build_experiment_plan(req.hypothesis, reviews)
 
     loop = asyncio.get_event_loop()
-    plan = await loop.run_in_executor(_thread_pool, _build)
+    try:
+        plan = await asyncio.wait_for(loop.run_in_executor(_thread_pool, _build), timeout=25.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Plan generation timed out on backend. Please retry with a narrower hypothesis or verify Vertex service health.",
+        )
     return plan
+
+
+@app.post("/api/experiments/plan/stream")
+async def api_experiments_plan_stream(req: ApiHypothesisRequest):
+    """Stream council deliberation events in real time.
+
+    Events from labmate.council are pushed onto an asyncio.Queue from a worker
+    thread; the SSE generator drains that queue (with periodic heartbeats so
+    proxies never see a quiet socket). The final `plan_complete` and
+    `metrics_complete` events are emitted from the asyncio loop after the
+    council returns.
+    """
+    import time as _time
+
+    _require_vertex_config()
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    SENTINEL: Dict[str, Any] = {"__done__": True}
+
+    def _on_event(name: str, payload: Dict[str, Any]) -> None:
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, {"name": name, "payload": payload})
+        except RuntimeError:
+            pass  # Loop already closed (client disconnected) — drop silently.
+
+    def _run() -> Dict[str, Any]:
+        from labmate.council import run_council_plan
+
+        try:
+            reviews = get_reviews()
+            result = run_council_plan(req.hypothesis, reviews, on_event=_on_event)
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, {"name": "__error__", "payload": {"message": str(exc)}})
+            raise
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, SENTINEL)
+        return result
+
+    council_future = asyncio.get_running_loop().run_in_executor(_thread_pool, _run)
+
+    async def _stream():
+        last_pct = {"v": 5}
+        heartbeat_count = 0
+
+        def _progress(stage: str, message: str, pct: int) -> bytes:
+            last_pct["v"] = pct
+            return sse_event(SSEEventType.PROGRESS, {"stage": stage, "message": message, "pct": pct})
+
+        try:
+            yield _progress("parse", "Parsing hypothesis...", 8)
+
+            saw_first_draft = False
+            saw_objections = False
+            draft_count = 0
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=4.0)
+                except asyncio.TimeoutError:
+                    heartbeat_count += 1
+                    if heartbeat_count in {6, 12}:
+                        yield sse_event(SSEEventType.PROGRESS, {
+                            "stage": "timeout_watch",
+                            "message": "Council is still processing; waiting on model responses. Fallback may be used if delays continue.",
+                            "pct": last_pct["v"],
+                        })
+                    yield sse_event(SSEEventType.PROGRESS, {
+                        "stage": "heartbeat",
+                        "message": "Council still working...",
+                        "pct": last_pct["v"],
+                    })
+                    continue
+
+                if item is SENTINEL:
+                    break
+
+                name = item.get("name")
+                payload = item.get("payload", {})
+                heartbeat_count = 0
+
+                if name == "__error__":
+                    yield sse_event(SSEEventType.ERROR, {"message": payload.get("message", "council failed"), "stage": "council"})
+                    break
+
+                if name == "parse_complete":
+                    yield _progress("parse", f"Parsed: {payload.get('domain', '?')} / {payload.get('subject', '?')}", 18)
+
+                elif name == "qc_ready":
+                    signal = (payload.get("signal") or "").replace(" ", "_")
+                    refs = payload.get("references") or []
+                    yield sse_event(SSEEventType.QC_COMPLETE, {
+                        "signal": signal,
+                        "summary": payload.get("summary", ""),
+                        "refs": refs[:3],
+                        "references": refs[:3],
+                    })
+                    yield sse_event(SSEEventType.GRAPH_READY, {
+                        "workspace_id": f"ws-{(payload.get('domain') or 'general').lower().replace(' ', '-')}",
+                        "paper_count": int(max(0, len(refs) * 7)),
+                        "domain": payload.get("domain", "General"),
+                    })
+                    yield _progress("parse", "Building base plan & retrieving protocol context...", 24)
+
+                elif name == "base_plan_ready":
+                    yield _progress("round1", "Round 1: 5 specialists drafting in parallel...", 32)
+
+                elif name == "agent_draft":
+                    if not saw_first_draft:
+                        saw_first_draft = True
+                    draft_count += 1
+                    yield sse_event(SSEEventType.AGENT_DRAFT, payload)
+                    yield _progress("round1", f"Round 1: {draft_count}/5 drafts in", min(60, 32 + draft_count * 6))
+
+                elif name == "objections":
+                    saw_objections = True
+                    items = payload.get("items", [])
+                    yield sse_event(SSEEventType.OBJECTIONS, {
+                        "items": items,
+                        "fatal_count": len([o for o in items if o.get("severity") == "fatal"]),
+                    })
+                    yield _progress("round3", f"Round 2 done · {len(items)} objections raised", 68)
+
+                elif name == "agent_revision":
+                    yield sse_event(SSEEventType.AGENT_REVISION, payload)
+
+                elif name == "metrics_ready":
+                    yield _progress("complete", "Computing final metrics...", 92)
+
+            result = await council_future
+            yield sse_event(SSEEventType.PLAN_COMPLETE, {
+                "plan": result.get("plan", {}),
+                "prdPlan": result.get("prd_plan", {}),
+                "legacy_plan": result.get("plan", {}),
+            })
+            yield sse_event(SSEEventType.METRICS_COMPLETE, {
+                "scores": result.get("metrics", {}),
+                "estimated": False,
+            })
+        except Exception as exc:
+            yield sse_event(SSEEventType.ERROR, {"message": str(exc), "stage": "stream_pipeline"})
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/chat")
 async def api_chat(req: ApiChatRequest):
     hypothesis = req.hypothesis or ""
+
+    # Pack context from live plan + reviews + novelty references.
+    plan_ctx = req.planContext or {}
+    reviews = req.reviews or []
+    novelty_refs = list((plan_ctx.get("novelty") or {}).get("references") or [])
+    sources = list(plan_ctx.get("sources") or [])
+    key_materials = list(plan_ctx.get("keyMaterials") or [])
+    validation = plan_ctx.get("validation") or {}
+    review_adaptations = plan_ctx.get("reviewAdaptations") or []
+
+    context_str = "\n".join([
+        f"Hypothesis: {hypothesis}",
+        f"Domain: {plan_ctx.get('domain', 'Unknown')}",
+        f"Primary metric: {validation.get('primaryMetric', 'Unknown')}",
+        f"Success criteria: {validation.get('successCriteria', 'Unknown')}",
+        f"Recent review count: {len(reviews)}",
+        f"Review adaptations count: {len(review_adaptations)}",
+        f"Key materials: {json.dumps(key_materials[:5])}",
+        f"Novelty references: {json.dumps(novelty_refs[:5])}",
+        f"Plan sources: {json.dumps(sources[:5])}",
+    ])
+
+    def _chat_sync():
+        from vertexai import init as vertex_init
+        from vertexai.generative_models import GenerativeModel, GenerationConfig
+        try:
+            project_id = os.environ.get("VERTEX_AI_PROJECT_ID", "").strip()
+            credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+            if not project_id or not credentials_path:
+                return None
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+            vertex_init(project=project_id, location="us-central1")
+
+            model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+            model = GenerativeModel(model_name)
+            prompt = f"""You are a scientific AI assistant. Answer the following question based on the provided experiment context.
+Context:
+{context_str}
+
+Question: {req.question}
+
+Please return the answer, and extract exactly 1-2 citations used from the context (or relevant general knowledge if context is lacking). Also provide 2 follow-up questions.
+Format your output EXACTLY as JSON matching this schema:
+{{
+  "answer": "your answer here",
+  "citations": [{{"title": "citation title", "source": "source name", "uri": "optional url"}}],
+  "followUps": ["question 1", "question 2"]
+}}
+"""
+            response = model.generate_content(
+                prompt,
+                generation_config=GenerationConfig(temperature=0.2, max_output_tokens=1200),
+            )
+            # Find JSON block
+            text = response.text
+            import re
+            json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'(\{.*\})', text, re.DOTALL)
+                json_str = json_match.group(1) if json_match else "{}"
+            
+            return json.loads(json_str)
+        except Exception:
+            # Fallback
+            return None
+
+    try:
+        loop = asyncio.get_event_loop()
+        res = await asyncio.wait_for(loop.run_in_executor(_thread_pool, _chat_sync), timeout=15.0)
+        if res:
+            return {
+                "answer": res.get("answer", "I encountered an error generating the answer."),
+                "citations": res.get("citations", []),
+                "followUps": res.get("followUps", []),
+                "mode": "grounded"
+            }
+    except Exception:
+        pass
+
+    # Fallback response: still grounded in visible context.
+    fallback_citations = []
+    for ref in novelty_refs[:2]:
+        fallback_citations.append({
+            "title": ref.get("title", "Novelty reference"),
+            "source": ref.get("source", "Plan novelty context"),
+            "uri": ref.get("uri"),
+        })
+    if not fallback_citations:
+        for src in sources[:2]:
+            fallback_citations.append({
+                "title": src.get("title", "Plan source"),
+                "source": src.get("source", "Plan context"),
+                "uri": src.get("uri"),
+            })
+
+    top_review = reviews[0]["correction"] if reviews else "No scientist reviews yet."
+    top_gate = (validation.get("decisionGates") or ["Review protocol gate readiness."])[0]
     answer = (
-        f"For hypothesis '{hypothesis[:120]}', the key next check is: {req.question}. "
-        "Review novelty references, validate control integrity, then confirm the primary metric thresholds."
+        f"For hypothesis '{hypothesis[:120]}', your question '{req.question}' is best addressed by checking gate: {top_gate}. "
+        f"Latest scientist guidance: {top_review}"
     )
     return {
         "answer": answer,
-        "citations": [{"title": "Literature QC", "source": "Generated from current plan context"}],
+        "citations": fallback_citations or [{"title": "Plan context", "source": "Generated from active plan context"}],
         "followUps": [
-            "Should we tighten the success criteria?",
-            "Which step has highest execution risk?",
+            "Which evidence source best supports this recommendation?",
+            "What is the first decision gate likely to fail?",
         ],
+        "mode": "fallback"
     }
 
 
 @app.get("/api/reviews")
 async def api_reviews_list(experimentId: Optional[str] = Query(default=None)):
-    if experimentId:
-        return [r for r in _REVIEWS if r.get("experimentId") == experimentId]
-    return _REVIEWS
+    reviews = get_reviews(experimentId)
+    return [{**r, "severity": _normalize_review_severity(r.get("severity", "medium"))} for r in reviews]
 
 
 @app.post("/api/reviews")
@@ -267,10 +568,10 @@ async def api_reviews_create(req: ApiReviewRequest):
         "section": req.section,
         "reviewer": req.reviewer,
         "correction": req.correction,
-        "severity": req.severity.lower(),
+        "severity": _normalize_review_severity(req.severity),
     }
-    _REVIEWS.append(record)
-    return record
+    saved_record = save_review(record)
+    return saved_record
 
 
 @app.get("/api/knowledge-graph/context")
@@ -302,7 +603,7 @@ async def api_knowledge_graph(hypothesis: Optional[str] = Query(default=None)):
         "tags": [parsed.domain, "literature-qc", "agentic-plan"] if parsed else ["general", "literature-qc"],
         "materials": [],
         "protocolSteps": [],
-        "reviews": _REVIEWS[-5:],
+        "reviews": get_reviews()[:5],
     }
 
 

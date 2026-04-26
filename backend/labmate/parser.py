@@ -1,23 +1,13 @@
 import os
 import re
-import time
-import json
+import concurrent.futures as _cf
 from typing import Optional
-from groq import (
-    APIConnectionError,
-    APITimeoutError,
-    AuthenticationError,
-    BadRequestError,
-    Groq,
-    PermissionDeniedError,
-    RateLimitError,
-)
-from zhipuai import ZhipuAI
-from vertexai import generative_models
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 from dotenv import load_dotenv
 from .schemas import ParsedHypothesis
 from .prompt import SYSTEM_PROMPT
+
+_PARSER_VERTEX_TIMEOUT_S = float(os.environ.get("PARSER_VERTEX_TIMEOUT_S", "12"))
 
 
 def _configure_network_env() -> None:
@@ -152,93 +142,6 @@ def _fallback_parse(user_text: str, reason: str) -> ParsedHypothesis:
     )
 
 
-def _parse_with_glm(user_text: str) -> ParsedHypothesis:
-    """Parse hypothesis using GLM API."""
-    load_dotenv()
-    api_key = os.environ.get("GLM_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("GLM_API_KEY is not set.")
-    
-    client = ZhipuAI(api_key=api_key)
-    
-    try:
-        response = client.chat.completions.create(
-            model="glm-4",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"User Input: {user_text}\n\nReturn ONLY valid JSON, no other text."},
-            ],
-            temperature=0.1,
-        )
-        
-        json_text = response.choices[0].message.content
-        print(f"GLM raw response: {json_text[:500]}")
-        
-        # Extract JSON if wrapped in markdown
-        if "```json" in json_text:
-            json_text = json_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in json_text:
-            json_text = json_text.split("```")[1].split("```")[0].strip()
-        
-        return ParsedHypothesis.model_validate_json(json_text)
-    except Exception as exc:
-        print(f"GLM validation error: {exc}")
-        raise RuntimeError(f"GLM parser error: {exc}")
-
-
-def _parse_with_groq_with_retry(user_text: str, max_retries: int = 3) -> ParsedHypothesis:
-    """Parse hypothesis using Groq with retry logic for rate limits."""
-    load_dotenv()
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set.")
-    
-    client = Groq(api_key=api_key)
-    configured_model = os.environ.get("GROQ_MODEL", "").strip()
-    candidate_models = [
-        configured_model,
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-    ]
-    candidate_models = [m for m in candidate_models if m]
-    
-    print(f"Groq attempting with models: {candidate_models}")
-    
-    for attempt in range(max_retries):
-        for model_name in candidate_models:
-            try:
-                print(f"Groq attempt {attempt+1}/{max_retries} with model {model_name}")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"User Input: {user_text}"},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.1,
-                )
-                json_text = response.choices[0].message.content
-                print(f"Groq response: {json_text[:200]}")
-                return ParsedHypothesis.model_validate_json(json_text)
-            except RateLimitError as exc:
-                print(f"Groq RateLimitError: {exc}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                    continue
-                raise
-            except BadRequestError as exc:
-                msg = str(exc).lower()
-                print(f"Groq BadRequestError: {exc}")
-                if "decommissioned" in msg or "no longer supported" in msg or "model_decommissioned" in msg:
-                    continue
-                raise
-            except Exception as exc:
-                print(f"Groq exception: {exc}")
-                raise RuntimeError(f"Groq parser error: {exc}")
-    
-    raise RuntimeError("Groq parser failed after all retries")
-
-
 def _parse_with_vertex_ai(user_text: str) -> ParsedHypothesis:
     """Parse hypothesis using Vertex AI."""
     load_dotenv()
@@ -261,13 +164,17 @@ def _parse_with_vertex_ai(user_text: str) -> ParsedHypothesis:
         model = GenerativeModel(model_name)
         prompt = f"{SYSTEM_PROMPT}\n\nUser Input: {user_text}\n\nReturn ONLY valid JSON. Complete the entire JSON object including all fields. Do not truncate."
         
-        response = model.generate_content(
-            prompt,
-            generation_config=GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=8192,
+        # Hard timeout to prevent UI retry loops caused by long-hanging provider calls.
+        with _cf.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                model.generate_content,
+                prompt,
+                generation_config=GenerationConfig(
+                    temperature=0.1,
+                    max_output_tokens=8192,
+                ),
             )
-        )
+            response = future.result(timeout=_PARSER_VERTEX_TIMEOUT_S)
         
         json_text = response.text
         print(f"Vertex AI raw response: {json_text[:500]}")
@@ -287,17 +194,12 @@ def _parse_with_vertex_ai(user_text: str) -> ParsedHypothesis:
 def parse_user_input(user_text: str) -> ParsedHypothesis:
     load_dotenv()
     _configure_network_env()
-    
-    # Try Vertex AI first (primary)
+
     try:
         return _parse_with_vertex_ai(user_text)
     except Exception as exc:
-        print(f"Vertex AI parser error: {exc}")
-        # Fall back to Groq with retry
-        try:
-            return _parse_with_groq_with_retry(user_text)
-        except Exception as exc2:
-            print(f"Groq parser error: {exc2}")
-            # Fall back to heuristic
-            return _fallback_parse(user_text, f"Vertex AI and Groq parsers failed. Last error: {exc2}")
+        # Vertex is the only supported provider in this deployment.
+        # Keep a deterministic heuristic fallback so UI/tests can continue to work
+        # without silently switching to other AI APIs.
+        return _fallback_parse(user_text, f"Vertex-only parser path failed: {exc}")
 

@@ -4,10 +4,12 @@ from typing import AsyncIterator
 
 
 class SSEEventType(str, Enum):
+    PROGRESS = "progress"
     QC_COMPLETE = "qc_complete"
     GRAPH_READY = "graph_ready"
     AGENT_DRAFT = "agent_draft"
     OBJECTIONS = "objections"
+    AGENT_REVISION = "agent_revision"
     PLAN_COMPLETE = "plan_complete"
     METRICS_COMPLETE = "metrics_complete"
     ERROR = "error"

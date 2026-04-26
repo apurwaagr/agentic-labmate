@@ -4,6 +4,7 @@ import {
   budgetRegions,
   adjustedBudgetAmount,
   createReview,
+  fetchKnowledgeGraphContext,
   formatCurrency,
   scientistGapsForPlan,
   type BudgetRegion,
@@ -47,6 +48,25 @@ export function ContextStore({
   const [saving, setSaving] = useState(false);
   const [assumptionsOpen, setAssumptionsOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [kgSnapshot, setKgSnapshot] = useState<{ nodes: Array<{ id: string; label: string }>; tags: string[] } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchKnowledgeGraphContext(plan.hypothesis)
+      .then((ctx) => {
+        if (!active) return;
+        setKgSnapshot({
+          nodes: (ctx.nodes || []).slice(0, 4).map((node) => ({ id: node.id, label: node.label })),
+          tags: (ctx.tags || []).slice(0, 6),
+        });
+      })
+      .catch(() => {
+        if (active) setKgSnapshot(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [plan.hypothesis]);
 
   async function submitReview() {
     const trimmed = correction.trim();
@@ -191,6 +211,33 @@ export function ContextStore({
               ))}
             </div>
           </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl bg-panel border border-border p-3.5 shadow-sm">
+        <div className="mb-2 flex items-center gap-2">
+          <ShieldCheck className="size-3.5 text-primary" />
+          <h3 className="text-sm font-semibold">Lineage & KG Evidence</h3>
+        </div>
+        {kgSnapshot ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1">
+              {kgSnapshot.nodes.map((node) => (
+                <span key={node.id} className="rounded-full border border-border bg-muted/25 px-2 py-0.5 text-[10px] text-foreground/80">
+                  {node.label}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {kgSnapshot.tags.map((tag) => (
+                <span key={tag} className="rounded-full border border-primary/20 bg-primary-soft px-2 py-0.5 text-[10px] text-primary">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">KG lineage snapshot unavailable. It will appear when context is fetched.</p>
         )}
       </div>
 
