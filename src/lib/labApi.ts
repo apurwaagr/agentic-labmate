@@ -52,6 +52,12 @@ export type MaterialItem = {
   supplier: string;
   quantity: string;
   unitCostUsd: number;
+  priceRangeUsd?: {
+    minUsd: number;
+    maxUsd: number;
+  };
+  sourcingConfidence?: "low" | "medium" | "high";
+  priceConfidence?: "low" | "medium" | "high";
   leadTime: string;
   status: "owned" | "in-stock" | "order";
   notes?: string;
@@ -629,11 +635,16 @@ async function readJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-const API_TIMEOUT_MS = 4500;
+const DEFAULT_API_TIMEOUT_MS = 8000;
+const PLAN_API_TIMEOUT_MS = 30000;
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs: number = DEFAULT_API_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(input, {
@@ -642,7 +653,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): P
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Local API timed out after ${API_TIMEOUT_MS / 1000}s. Make sure the mock API is running on port 8787.`);
+      throw new Error(`Local API timed out after ${timeoutMs / 1000}s. Make sure the mock API is running on port 8787.`);
     }
 
     throw new Error("Local API is unavailable on port 8787. Start it with `npm run api` or use `npm run dev` to launch both services.");
@@ -658,7 +669,7 @@ export async function fetchExperimentPlan(hypothesis: string): Promise<{ experim
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ hypothesis }),
-  });
+  }, PLAN_API_TIMEOUT_MS);
 
   return readJson<{ experiment: ExperimentPlan }>(response);
 }

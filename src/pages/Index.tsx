@@ -935,8 +935,8 @@ const Index = () => {
                         <textarea
                           value={activeHypothesisDraft}
                           onChange={(event) => setActiveHypothesisDraft(event.target.value)}
-                          rows={2}
-                          className="flex-1 rounded-xl border border-border bg-panel px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                          rows={6}
+                          className="min-h-[140px] flex-1 rounded-xl border border-border bg-panel px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize"
                           placeholder="Scientific hypothesis…"
                         />
                         <div className="flex gap-2 lg:flex-col lg:w-36">

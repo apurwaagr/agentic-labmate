@@ -61,6 +61,59 @@ function normalizedCompoundName(label?: string): string {
   return cleaned;
 }
 
+function no3dReason(label?: string): { title: string; detail: string } {
+  const name = (label || "").toLowerCase();
+
+  if (/dextran|polymer|peg|pvp|nanoparticle|aunp|colloid/.test(name)) {
+    return {
+      title: "3D structure unavailable for this material.",
+      detail: "Polymeric or colloidal materials often do not have a single canonical small-molecule 3D conformer.",
+    };
+  }
+
+  if (/protein|antibody|cell|hela|culture|bacteria|microbe/.test(name)) {
+    return {
+      title: "3D structure unavailable for this material.",
+      detail: "Biological entities are typically not represented as one small-molecule conformer in PubChem-style 3D viewers.",
+    };
+  }
+
+  if (/carbon dioxide|\bco2\b/.test(name)) {
+    return {
+      title: "3D structure temporarily unavailable from external providers.",
+      detail: "This is a valid small molecule. If PubChem is rate-limited, retry shortly and the viewer should recover.",
+    };
+  }
+
+  return {
+    title: "3D structure unavailable for this compound.",
+    detail: "If this is a nanoparticle, polymer, or biologic material, a rotatable small-molecule conformer may not exist.",
+  };
+}
+
+function staticSdfFallback(cid: number, label?: string): string | null {
+  const name = (label || "").toLowerCase();
+
+  // Stable fallback for common gases when upstream SDF providers are rate-limited.
+  if (cid === 280 || /carbon dioxide|\bco2\b/.test(name)) {
+    return [
+      "Carbon dioxide",
+      "  Copilot-Static-2D",
+      "",
+      "  3  2  0  0  0  0            999 V2000",
+      "   -1.2990    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    1.2990    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  2  0  0  0  0",
+      "  2  3  2  0  0  0  0",
+      "M  END",
+      "$$$$",
+    ].join("\n");
+  }
+
+  return null;
+}
+
 export function Molecule3DViewer({
   cid,
   className,
@@ -139,6 +192,14 @@ export function Molecule3DViewer({
           }
         }
 
+        if (!sdf) {
+          const fallbackSdf = staticSdfFallback(cid, label);
+          if (fallbackSdf) {
+            sdf = fallbackSdf;
+            got3D = false;
+          }
+        }
+
         if (!sdf) throw new Error("No SDF available");
         if (!active || !hostRef.current || !window.$3Dmol) return;
 
@@ -188,6 +249,7 @@ export function Molecule3DViewer({
   }
 
   const styleLabel = { ballstick: "Ball & Stick", stick: "Stick", sphere: "Space Fill" }[viewStyle];
+  const unavailable = no3dReason(label);
 
   return (
     <div className={`relative overflow-hidden rounded-xl ${className ?? ""}`}>
@@ -211,9 +273,9 @@ export function Molecule3DViewer({
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-[#0d1117]">
           <div className="text-2xl">🧪</div>
           <span className="text-[11px] text-slate-400 text-center px-4">
-            3D structure unavailable for this compound.
+            {unavailable.title}
             <br />
-            For nanoparticles or bulk metals, 3D conformers may not exist.
+            {unavailable.detail}
           </span>
         </div>
       )}

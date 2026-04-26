@@ -531,10 +531,36 @@ function normalizeCompoundQuery(name) {
   return (name || "")
     .replace(/\([^)]*\)/g, " ")
     .replace(/\b\d+(?:\.\d+)?\s*(?:mM|uM|nM|M|mg\/?mL|g\/?L|%|w\/?v|v\/?v)\b/gi, " ")
-    .replace(/\b(?:solution|buffer|media|medium|reagent grade|catalog|cat\.?\s*no\.?|lot\s*no\.?)\b/gi, " ")
+    .replace(/\b(?:solution|buffer|media|medium|reagent grade|catalog|cat\.?\s*no\.?|lot\s*no\.?|feed|target|substrate|assembly|grade|cell culture)\b/gi, " ")
     .replace(/[,:;]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isGenericNonCompoundLabel(name = "") {
+  const label = (name || "").toLowerCase().trim();
+  return /custom experimental plan|primary measured outcome|matched control arm|hypothesis threshold|life science/.test(label)
+    || /translate a research hypothesis|runnable lab experiment/.test(label);
+}
+
+function pubchemNameCandidates(name = "") {
+  const raw = (name || "").trim();
+  const normalized = normalizeCompoundQuery(raw);
+
+  const aliases = {
+    "carbon dioxide feed": "carbon dioxide",
+    "co2 feed": "carbon dioxide",
+    "acetate assay": "acetate",
+    "acetate assay kit": "acetate",
+  };
+
+  const alias = aliases[raw.toLowerCase()] || aliases[normalized.toLowerCase()] || "";
+  const dequalified = normalized
+    .replace(/\b(feed|target|substrate|assembly|kit|culture|cells?)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return [...new Set([raw, normalized, alias, dequalified].filter(Boolean))].filter((candidate) => !isGenericNonCompoundLabel(candidate));
 }
 
 function likelyNotSingleCompound(name) {
@@ -798,7 +824,9 @@ function keywordSupplier(label = "") {
   if (/(antibody|crp|viability|thermo|elisa)/.test(lower)) return "Thermo Fisher";
   if (/(trehalose|dmso|fitc|dextran|sigma)/.test(lower)) return "Sigma-Aldrich";
   if (/(primer|probe|oligo|qpcr)/.test(lower)) return "IDT";
-  return "Scientific supplier API";
+  if (/(kit|assay|enzyme)/.test(lower)) return "Thermo Fisher";
+  if (/(buffer|pbs|tris|hepes|salt|chloride|sulfate)/.test(lower)) return "VWR / Fisher Scientific";
+  return "Primary scientific supplier";
 }
 
 function keywordCost(label = "") {
@@ -808,6 +836,89 @@ function keywordCost(label = "") {
   if (/(antibody|assay|kit|viability|electrode)/.test(lower)) return 220;
   if (/(trehalose|dmso|buffer|dextran|reagent)/.test(lower)) return 85;
   return 160;
+}
+
+function inferCatalogNumber(label = "", supplier = "", compound = null) {
+  const lower = label.toLowerCase();
+  if (/trehalose/.test(lower)) return supplier.includes("Sigma") ? "T0167" : "TREHALOSE-25G";
+  if (/\bdmso\b|dimethyl sulfoxide/.test(lower)) return supplier.includes("Sigma") ? "D2650" : "DMSO-100ML";
+  if (/fitc-dextran/.test(lower)) return supplier.includes("Sigma") ? "FD4" : "FITC-DEXTRAN-4K";
+  if (/antibody/.test(lower)) return supplier.includes("Thermo") ? "MA1-82376" : "ANTIBODY-100UG";
+  if (/hela|cell/.test(lower)) return supplier.includes("ATCC") ? "CCL-2" : "CELL-LINE-1";
+  if (/sporomusa/.test(lower)) return supplier.includes("DSMZ") ? "DSM-2662" : "MICROBE-1";
+  if (compound?.cid) return `CID-${compound.cid}`;
+  return `${slugCatalog(label)}-${Math.floor(100 + Math.random() * 900)}`;
+}
+
+function inferQuantity(label = "", index = 0, compound = null) {
+  const lower = label.toLowerCase();
+
+  if (/(hela|cell|culture|mice|mouse|sporomusa|bacteria|microbe)/.test(lower)) return "1 lot";
+  if (/(antibody|kit|assay)/.test(lower)) return "1 kit";
+  if (/fitc-dextran/.test(lower)) return "1 g";
+  if (/(trehalose|sucrose|glucose|salt|buffer|reagent)/.test(lower)) return "500 g";
+  if (/(dmso|ethanol|methanol|solvent)/.test(lower)) return "500 mL";
+  if (/(co2|carbon dioxide)/.test(lower)) return "1 cylinder";
+  if (/(electrode|reactor|substrate)/.test(lower)) return index === 0 ? "1 setup" : "1 unit";
+
+  if (compound?.molecularWeight && compound.molecularWeight < 300) return "100 g";
+  return index === 0 ? "1 lot" : "1 unit";
+}
+
+function inferLeadTime(label = "", supplier = "") {
+  const lower = label.toLowerCase();
+  const s = supplier.toLowerCase();
+
+  if (/(owned|in lab)/.test(lower)) return "in lab";
+  if (/(atcc|dsmz)/.test(s) || /(cell|culture|mice|mouse|sporomusa)/.test(lower)) return "5-9 d";
+  if (/(antibody|kit|assay|electrode)/.test(lower)) return "3-6 d";
+  if (/(trehalose|dmso|dextran|buffer|reagent|co2)/.test(lower)) return "2-5 d";
+  return "3-7 d";
+}
+
+function inferStatus(label = "", index = 0, supplier = "") {
+  const lower = label.toLowerCase();
+  if (/(buffer|pbs|water|dmso|trehalose|salt)/.test(lower)) return "in-stock";
+  if (/(owned|in lab)/.test(lower)) return "owned";
+  if (/atcc|dsmz/i.test(supplier)) return "order";
+  return index === 0 ? "order" : index === 1 ? "in-stock" : "order";
+}
+
+function inferUnitCost(label = "", compound = null, supplier = "") {
+  const base = keywordCost(label);
+  const lower = label.toLowerCase();
+
+  // Small molecules with known molecular data are often lower-cost commodity reagents.
+  if (compound?.molecularWeight && compound.molecularWeight < 250 && /(sigma|vwr|fisher|primary scientific)/i.test(supplier)) {
+    return Math.max(35, Math.round(base * 0.7));
+  }
+  if (/(cell|culture|mice|mouse|sporomusa)/.test(lower)) return Math.max(base, 380);
+  if (/(antibody|kit|assay|electrode)/.test(lower)) return Math.max(base, 190);
+  return base;
+}
+
+function inferPriceRange(label = "", unitCostUsd = 0, supplier = "") {
+  const lower = label.toLowerCase();
+  const s = supplier.toLowerCase();
+
+  let spread = 0.25;
+  if (/(atcc|dsmz)/.test(s) || /(cell|culture|mice|mouse|sporomusa)/.test(lower)) spread = 0.35;
+  if (/(buffer|salt|dmso|trehalose|ethanol|methanol|water)/.test(lower)) spread = 0.18;
+  if (/(antibody|kit|assay|electrode)/.test(lower)) spread = 0.3;
+
+  const minUsd = Math.max(10, Math.round(unitCostUsd * (1 - spread)));
+  const maxUsd = Math.max(minUsd + 5, Math.round(unitCostUsd * (1 + spread)));
+  return { minUsd, maxUsd };
+}
+
+function inferConfidence(label = "", compound = null, supplier = "") {
+  const lower = label.toLowerCase();
+  const hasPubChem = Boolean(compound?.cid);
+  const specialized = /(atcc|dsmz)/i.test(supplier) || /(cell|culture|mice|mouse|sporomusa|antibody|kit|assay)/.test(lower);
+
+  const sourcingConfidence = hasPubChem || /(sigma|thermo|fisher|idt|vwr|atcc|dsmz)/i.test(supplier) ? "medium" : "low";
+  const priceConfidence = specialized ? "low" : hasPubChem ? "medium" : "low";
+  return { sourcingConfidence, priceConfidence };
 }
 
 function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
@@ -831,6 +942,9 @@ function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
     if (!normalized) {
       return;
     }
+    if (isGenericNonCompoundLabel(normalized)) {
+      return;
+    }
     const key = normalized.toLowerCase();
     if (seen.has(key)) {
       return;
@@ -851,7 +965,7 @@ function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
     { pattern: /claudin-1/, label: "Claudin-1 antibody" },
     { pattern: /occludin/, label: "Occludin antibody" },
     { pattern: /sporomusa ovata/, label: "Sporomusa ovata culture" },
-    { pattern: /carbon dioxide|\bco2\b/, label: "Carbon dioxide feed" },
+    { pattern: /carbon dioxide|\bco2\b/, label: "Carbon dioxide" },
     { pattern: /acetate/, label: "Acetate assay kit" },
     { pattern: /cathode/, label: "Cathode electrode assembly" },
   ];
@@ -876,25 +990,6 @@ function inferMaterialCandidates(parsed, hypothesis, evidencePack) {
     });
 
   return candidates.slice(0, 6);
-}
-
-function inferQuantity(label = "", index = 0) {
-  const lower = label.toLowerCase();
-
-  if (/(cell|culture|mice|mouse)/.test(lower)) return "1 lot";
-  if (/(antibody|kit|assay)/.test(lower)) return "1 kit";
-  if (/(trehalose|dmso|dextran|buffer|reagent)/.test(lower)) return "1 bottle";
-  if (/(co2|carbon dioxide|electrode|reactor|substrate)/.test(lower)) return index === 0 ? "1 setup" : "1 unit";
-  return index === 0 ? "1 lot" : "1 unit";
-}
-
-function inferLeadTime(label = "") {
-  const lower = label.toLowerCase();
-
-  if (/(cell|culture|mice|mouse|sporomusa)/.test(lower)) return "4-7 d";
-  if (/(antibody|kit|assay|electrode)/.test(lower)) return "3-5 d";
-  if (/(trehalose|dmso|dextran|buffer|reagent|co2)/.test(lower)) return "2-4 d";
-  return "3-5 d";
 }
 
 function evidenceUrl(item) {
@@ -1074,30 +1169,35 @@ async function fetchProtocolsIoEvidence(hypothesis) {
 }
 
 async function fetchPubChemCompoundByName(name) {
-  const encodedName = encodeURIComponent(name.trim());
-  if (!encodedName) {
+  const candidates = pubchemNameCandidates(name);
+  if (!candidates.length) {
     return null;
   }
 
-  const json = await fetchJson(
-    `${pubchemApiUrl}/compound/name/${encodedName}/property/Title,MolecularFormula,MolecularWeight,CanonicalSMILES,IUPACName/JSON`,
-  ).catch(() => null);
+  for (const candidate of candidates) {
+    const encodedName = encodeURIComponent(candidate);
+    const json = await fetchJson(
+      `${pubchemApiUrl}/compound/name/${encodedName}/property/Title,MolecularFormula,MolecularWeight,CanonicalSMILES,IUPACName/JSON`,
+    ).catch(() => null);
 
-  const properties = json?.PropertyTable?.Properties;
-  const property = Array.isArray(properties) ? properties[0] : null;
-  if (!property?.CID) {
-    return null;
+    const properties = json?.PropertyTable?.Properties;
+    const property = Array.isArray(properties) ? properties[0] : null;
+    if (!property?.CID) {
+      continue;
+    }
+
+    return {
+      cid: property.CID,
+      title: property.Title || candidate,
+      molecularFormula: property.MolecularFormula || "",
+      molecularWeight: typeof property.MolecularWeight === "number" ? property.MolecularWeight : null,
+      canonicalSmiles: property.CanonicalSMILES || "",
+      iupacName: property.IUPACName || "",
+      url: `https://pubchem.ncbi.nlm.nih.gov/compound/${property.CID}`,
+    };
   }
 
-  return {
-    cid: property.CID,
-    title: property.Title || name,
-    molecularFormula: property.MolecularFormula || "",
-    molecularWeight: typeof property.MolecularWeight === "number" ? property.MolecularWeight : null,
-    canonicalSmiles: property.CanonicalSMILES || "",
-    iupacName: property.IUPACName || "",
-    url: `https://pubchem.ncbi.nlm.nih.gov/compound/${property.CID}`,
-  };
+  return null;
 }
 
 async function retrieveEvidencePack(hypothesis) {
@@ -1167,18 +1267,27 @@ async function buildMaterialsFromEvidence(parsed, hypothesis, evidencePack) {
 
   return candidates.map((label, index) => {
     const compound = compounds[index];
+    const supplier = keywordSupplier(label);
+    const status = inferStatus(label, index, supplier);
+    const catalogNumber = inferCatalogNumber(label, supplier, compound);
+    const unitCostUsd = inferUnitCost(label, compound, supplier);
+    const priceRangeUsd = inferPriceRange(label, unitCostUsd, supplier);
+    const confidence = inferConfidence(label, compound, supplier);
 
     return {
       name: compound?.title || label,
-      catalogNumber: compound?.cid ? `CID-${compound.cid}` : `${slugCatalog(label)}-${index + 1}`,
-      supplier: compound ? "PubChem" : fallbackSource,
-      quantity: inferQuantity(label, index),
-      unitCostUsd: keywordCost(label),
-      leadTime: inferLeadTime(label),
-      status: index === 0 ? "order" : index === 1 ? "in-stock" : /dmso|trehalose|buffer|co2/.test(label.toLowerCase()) ? "in-stock" : "order",
+      catalogNumber,
+      supplier,
+      quantity: inferQuantity(label, index, compound),
+      unitCostUsd,
+      priceRangeUsd,
+      sourcingConfidence: confidence.sourcingConfidence,
+      priceConfidence: confidence.priceConfidence,
+      leadTime: status === "owned" ? "in lab" : inferLeadTime(label, supplier),
+      status,
       notes: compound
-        ? "Matched to a live PubChem compound record and ranked against retrieved literature evidence."
-        : "Derived from retrieved literature and hypothesis structure; no PubChem compound match was found.",
+        ? `Identity verified via PubChem CID ${compound.cid}; procurement profile inferred from supplier class and material type.`
+        : `Derived from retrieved literature and hypothesis structure; procurement profile inferred from material class and ${fallbackSource}.`,
       pubchemCid: compound?.cid,
       molecularFormula: compound?.molecularFormula || undefined,
       molecularWeight: compound?.molecularWeight || undefined,

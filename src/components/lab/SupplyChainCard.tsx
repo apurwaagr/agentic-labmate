@@ -7,6 +7,19 @@ const statusBadge: Record<string, string> = {
   order: "bg-warning-soft text-warning border-warning/30",
 };
 
+function sanitizeSupplyNote(note?: string): string {
+  if (!note) return "";
+  return note
+    .replace(/;?\s*no pubchem compound match was found\.?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function confidenceLabel(value?: "low" | "medium" | "high") {
+  if (!value) return "n/a";
+  return value;
+}
+
 export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; budgetRegion: BudgetRegion }) {
   return (
     <section className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
@@ -39,6 +52,10 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
             {plan.materials.map((item) => (
               <tr key={`${item.catalogNumber}-${item.name}`} className="hover:bg-muted/20 transition-colors">
                 <td className="px-4 py-2.5">
+                  {(() => {
+                    const note = sanitizeSupplyNote(item.notes);
+                    return (
+                      <>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-foreground">{item.name}</span>
                     <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${statusBadge[item.status]}`}>
@@ -46,7 +63,10 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
                       {item.status.replace("-", " ")}
                     </span>
                   </div>
-                  {item.notes && <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{item.notes}</div>}
+                  {note && <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{note}</div>}
+                      </>
+                    );
+                  })()}
                 </td>
                 <td className="px-3 py-2.5 text-muted-foreground">
                   <div>{item.supplier}</div>
@@ -59,7 +79,15 @@ export function SupplyChainCard({ plan, budgetRegion }: { plan: ExperimentPlan; 
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-right font-semibold text-foreground">
-                  {formatCurrency(adjustedBudgetAmount(item.unitCostUsd, budgetRegion, "reagents"), budgetRegion)}
+                  <div>{formatCurrency(adjustedBudgetAmount(item.unitCostUsd, budgetRegion, "reagents"), budgetRegion)}</div>
+                  {item.priceRangeUsd && (
+                    <div className="text-[10px] font-normal text-muted-foreground">
+                      {formatCurrency(adjustedBudgetAmount(item.priceRangeUsd.minUsd, budgetRegion, "reagents"), budgetRegion)} - {formatCurrency(adjustedBudgetAmount(item.priceRangeUsd.maxUsd, budgetRegion, "reagents"), budgetRegion)}
+                    </div>
+                  )}
+                  <div className="text-[9px] font-normal uppercase tracking-[0.12em] text-muted-foreground/80">
+                    src {confidenceLabel(item.sourcingConfidence)} · cost {confidenceLabel(item.priceConfidence)}
+                  </div>
                 </td>
               </tr>
             ))}

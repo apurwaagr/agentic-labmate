@@ -85,7 +85,10 @@ function knownCidLookup(name: string): number | null {
   const key = name.trim().toLowerCase();
   if (KNOWN_CIDS[key] != null) return KNOWN_CIDS[key];
   // Try stripping common qualifiers: "cell culture grade", "analytical grade", etc.
-  const stripped = key.replace(/[,;].*$/, "").replace(/\s+(grade|cell culture|anhydrous|reagent|analytical|technical|ultrapure|hplc|anhydrous|sterile|pure)\b.*/g, "").trim();
+  const stripped = key
+    .replace(/[,;].*$/, "")
+    .replace(/\s+(grade|cell culture|anhydrous|reagent|analytical|technical|ultrapure|hplc|sterile|pure|feed|target|substrate|assembly|kit)\b.*/g, "")
+    .trim();
   return KNOWN_CIDS[stripped] ?? null;
 }
 
