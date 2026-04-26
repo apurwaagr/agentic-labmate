@@ -26,6 +26,7 @@ type LabProject = ProjectListItem & {
 };
 
 const PROJECTS_STORAGE_KEY = "agentic-labmate-projects";
+const PLANS_STORAGE_KEY = "agentic-labmate-plans";
 const ACTIVE_PROJECT_STORAGE_KEY = "agentic-labmate-active-project";
 const BUDGET_REGION_STORAGE_KEY = "agentic-labmate-budget-region";
 
@@ -83,6 +84,7 @@ const Index = () => {
     try {
       const storedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
       const storedActiveId = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+      const storedPlans = localStorage.getItem(PLANS_STORAGE_KEY);
 
       if (storedProjects) {
         const parsed = JSON.parse(storedProjects) as LabProject[];
@@ -90,6 +92,10 @@ const Index = () => {
         if (parsed.length > 0) {
           setComposerOpen(false);
         }
+      }
+
+      if (storedPlans) {
+        setPlansByProject(JSON.parse(storedPlans) as Record<string, ExperimentPlan>);
       }
 
       if (storedActiveId) {
@@ -108,6 +114,10 @@ const Index = () => {
   useEffect(() => {
     localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
   }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(plansByProject));
+  }, [plansByProject]);
 
   useEffect(() => {
     if (activeProjectId) {
@@ -138,12 +148,13 @@ const Index = () => {
   const activeReviews = activeProject ? reviewsByProject[activeProject.id] ?? [] : [];
 
   useEffect(() => {
-    if (activeProject && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
+    // Only auto-generate on first creation (status "draft") — never re-run on project switch.
+    if (activeProject && activeProject.status === "draft" && !plansByProject[activeProject.id] && activeProject.hypothesis && !loading) {
       void generateForProject(activeProject.id, activeProject.hypothesis);
     }
     // generateForProject is intentionally excluded to avoid retrigger loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProject, plansByProject, loading]);
+  }, [activeProject?.id, plansByProject, loading]);
 
   function clearLogInterval() {
     if (logIntervalRef.current) {

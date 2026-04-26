@@ -928,18 +928,365 @@ function refForStep(evidencePack, stepIndex) {
   return items[stepIndex % items.length] || items[0];
 }
 
-function buildDynamicSteps(parsed, evidencePack, materials = []) {
+/** Domain-specific protocol "spine" — returns ordered step templates tuned per experimental family */
+function domainProtocolSpine(domainKey, parsed, materials) {
   const assay = parsed.outcome || "primary readout";
-  const intervention = parsed.intervention || "the primary reagent";
+  const intervention = parsed.intervention || "primary reagent";
   const control = parsed.control || "matched control";
   const subject = parsed.subject || "experimental system";
+  const threshold = parsed.threshold || "expected threshold";
   const mechanism = parsed.mechanism || "";
+
+  /* Helper: first material name matching a keyword */
+  const mat = (rx) => materials.find((m) => rx.test(m.name.toLowerCase()))?.name || null;
+
+  const d = domainKey.toLowerCase();
+
+  /* ── BIOSENSOR / DIAGNOSTICS ── */
+  if (/(diagnostic|biosensor|crp|elisa|antibody|immunoassay|point-of-care|paper|strip)/.test(d)) {
+    const electrode = mat(/(electrode|spe|screen|carbon|ito)/) || "screen-printed electrode (SPE)";
+    const linker    = mat(/(thiol|mpa|3-mercapto|linker|sam)/) || "3-mercaptopropionic acid (MPA)";
+    const antibody  = mat(/(antibody|anti-|igg|fab)/) || "anti-CRP antibody";
+    const analyte   = mat(/(crp|analyte|antigen|protein|target)/) || intervention;
+    const blocker   = mat(/(bsa|casein|block)/) || "1% BSA in PBS";
+    return [
+      {
+        title:  "Clean and electrochemically activate electrode surface",
+        detail: `Polish ${electrode} with 0.05 µm alumina slurry for 30 s, rinse with UHQ water, sonicate 30 s in isopropanol then UHQ water. Electrochemically activate with cyclic voltammetry (−0.4 to +1.6 V vs Ag/AgCl, 10 cycles, 100 mV/s) in 0.5 M H₂SO₄. Dry under N₂ stream. Confirm clean baseline by EIS (Rs, no Faradaic features).`,
+        quantity: `${electrode} — 1 unit per assay; 0.5 M H₂SO₄ — 10 mL`,
+        duration: "2 h",
+        riskLevel: "med",
+        riskNote: "Surface cleanliness determines SAM homogeneity and therefore antibody loading capacity. Skipping H₂SO₄ activation reduces sensitivity by ≥ 40%.",
+        validationChecks: ["EIS baseline: Rs 50–150 Ω, no distortion at low frequency.", "CV shows oxide-reduction peak at +0.9 V before linker deposition."],
+        decisionGate: "Do not proceed to SAM formation if EIS shows anomalous baseline or if Raman/XPS reveals surface contamination.",
+      },
+      {
+        title:  `Form self-assembled monolayer (SAM) with ${linker}`,
+        detail: `Immerse cleaned ${electrode} in 1 mM ${linker} in absolute ethanol for 16–18 h at RT in a sealed vial under dark conditions. Rinse 3× with ethanol then 3× with UHQ water. Dry with N₂. SAM formation confirmed by a shift in the Rct (EIS) of > 200 Ω relative to bare electrode.`,
+        quantity: `${linker} — 1 mM in 99.9% ethanol, 1 mL per electrode`,
+        duration: "16–18 h (overnight)",
+        riskLevel: "med",
+        riskNote: "Incomplete SAM leads to antibody multilayers and non-specific binding. Ethanol quality is critical.",
+        validationChecks: ["EIS Rct shift ≥ 200 Ω vs bare electrode; no pinhole defects.", "Contact angle after SAM formation: 20–30°."],
+        decisionGate: "Do not proceed to EDC/NHS coupling if EIS shows insufficient Rct shift or if contact angle is outside expected range.",
+      },
+      {
+        title:  `Conjugate ${antibody} via EDC/NHS carbodiimide coupling`,
+        detail: `Activate SAM carboxylate groups with 0.4 mg/mL EDC + 0.1 mg/mL sulfo-NHS in MES buffer (pH 6.0) for 30 min at RT. Remove activation solution, immediately apply ${antibody} at 10 µg/mL in PBS pH 7.4 (100 µL per electrode). Incubate 2 h at RT in humid chamber. Rinse 3× with PBS.`,
+        quantity: `EDC 0.4 mg/mL + sulfo-NHS 0.1 mg/mL in MES pH 6.0; ${antibody} 10 µg/mL — 100 µL per electrode`,
+        duration: "2.5 h",
+        riskLevel: "high",
+        riskNote: "EDC/NHS reaction window is narrow (< 15 min between activation and antibody addition). Delay or temperature fluctuation will hydrolyse active esters and abolish coupling.",
+        validationChecks: ["FTIR/Raman: amide-II band at 1540 cm⁻¹ should appear post-coupling.", "EIS Rct increases by 0.5–1.5 kΩ relative to SAM electrode."],
+        decisionGate: "Reject batch if EIS Rct change is outside 0.5–1.5 kΩ window. Re-activate electrode and repeat.",
+      },
+      {
+        title:  `Block non-specific binding sites with ${blocker}`,
+        detail: `Incubate antibody-modified electrode in ${blocker} for 60 min at RT. Rinse 3× with PBS, 3× with sample matrix buffer (e.g. 10× diluted whole blood or serum). This step passivates unreacted NHS esters and hydrophobic surface pockets.`,
+        quantity: `${blocker} — 200 µL per electrode; pH 7.4 PBS wash buffer — 5 mL`,
+        duration: "1 h",
+        riskLevel: "low",
+        riskNote: "Insufficient blocking leads to non-specific adsorption in complex matrices (whole blood, serum), inflating apparent signal.",
+        validationChecks: ["Baseline EIS reading stable within ±3% over 30 min after blocking.", "Blank sample (0 analyte) shows no measurable current change vs buffer."],
+      },
+      {
+        title:  `Run ${analyte} dose-response (${control} in parallel)`,
+        detail: `Apply serial dilutions of ${analyte} (0, 0.1, 0.5, 1, 5, 10, 50, 100 µg/mL) in sample matrix. Incubate 30 min at RT per concentration. Measure by amperometry at −0.1 V vs Ag/AgCl (ferrocene-mediated) or DPV (−0.4 to +0.6 V, 5 mV step, 25 mV amplitude). Record peak current Ip. Run ${control} (buffer blank, non-specific protein) in parallel at every concentration. Primary readout: Δ% Ip vs baseline.`,
+        quantity: `${analyte} serial dilutions in 50 µL per measurement; total volume ≈ 0.5 mL`,
+        duration: "1 day",
+        riskLevel: "high",
+        riskNote: `Assay measures ${assay}. Failure modes: drift between replicates (> 15% CV), matrix effects from red blood cells, antibody off-rate causing signal loss at low analyte concentration.`,
+        validationChecks: [
+          "R² ≥ 0.98 for 4-PL calibration fit.",
+          "LOD ≤ stated sensitivity goal from hypothesis.",
+          `Contrast between ${control} and highest analyte ≥ 3-fold.`,
+        ],
+        decisionGate: `Advance to validation only if dose-response R² ≥ 0.98 and LOD meets ${threshold}.`,
+      },
+      {
+        title:  `Validate selectivity and matrix robustness — measure ${assay} in human serum/blood`,
+        detail: `Spike ${analyte} at 1 µg/mL (midpoint of linear range) into: (a) PBS, (b) 1:10 diluted human serum, (c) 1:10 diluted whole blood. Record selectivity by testing 10-fold excess of common interferents: IgG, albumin, glucose, urea. Calculate cross-reactivity (< 5% acceptable). Confirm sensor-to-sensor variability across 3 independently fabricated electrodes (inter-electrode CV ≤ 12%).`,
+        quantity: "n = 3 electrodes per matrix; ≈ 0.5 mL per matrix",
+        duration: "1–2 days",
+        riskLevel: "med",
+        riskNote: "Real-matrix performance can diverge significantly from buffered calibration. Haematocrit effects and protein crowding are the leading causes of inflated LOD in POC blood tests.",
+        validationChecks: [
+          "Selectivity: < 5% cross-reactivity to listed interferents.",
+          "Inter-electrode CV ≤ 12%.",
+          "Recovery in serum/blood matrix: 85–115%.",
+        ],
+        decisionGate: "Do not claim POC-readiness until whole-blood recovery is confirmed in this range.",
+      },
+    ];
+  }
+
+  /* ── CELL BIOLOGY / CRYOPRESERVATION ── */
+  if (/(cell.biology|cryopreserv|hela|post-thaw|freezing|viability|trehalose|dmso)/.test(d) ||
+      /(hela|cryoprotectant|post-thaw|freezing medium|trehalose|cell viability)/.test((parsed.intervention + " " + parsed.subject).toLowerCase())) {
+    const cells    = mat(/(hela|cell|lrgg|cho|3t3|jurkat)/) || subject;
+    const cryoInt  = mat(/(trehalose|dmso|glycerol|pvp|bsa|sucrose)/) || intervention;
+    const cryoCtrl = mat(/(dmso|standard|control)/) || control;
+    return [
+      {
+        title:  `Culture and quality-check ${cells} before freezing`,
+        detail: `Expand ${cells} in DMEM/F12 + 10% FBS + 1% Pen-Strep at 37°C, 5% CO₂ to 80–90% confluence. Count with haemocytometer (trypan blue exclusion); target viability > 95% before freezing. Passage number must be ≤ 20 to avoid senescence artefacts. Record passage, doubling time, and morphology.`,
+        quantity: `${cells} — 2 × 10⁶ cells per cryo-vial; T75 flask per condition`,
+        duration: "2–3 days (culture expansion)",
+        riskLevel: "high",
+        riskNote: "Starting viability < 95% amplifies cryoinjury and creates floor effects that mask treatment differences. Low passage homogeneity is the biggest confound.",
+        validationChecks: ["Pre-freeze viability ≥ 95% by trypan blue.", "Passage ≤ 20, morphology normal, no signs of mycoplasma."],
+        decisionGate: "Do not freeze cells if pre-freeze viability < 95% or if passage number is > 20.",
+      },
+      {
+        title:  `Prepare cryoprotectant solutions — ${cryoInt} vs ${cryoCtrl}`,
+        detail: `Prepare cryoprotectant solutions in serum-free DMEM at ice-cold temperature (0–4°C) to minimise cytotoxicity during preparation: ${cryoInt} at 25 mM, 50 mM, 100 mM, 200 mM; ${cryoCtrl} at 10% v/v (standard). Sterile-filter (0.22 µm). Do not allow solutions to warm to room temperature before cell addition. Confirm osmolality of each solution (expected: PBS baseline ≈ 300 mOsm/kg; each 100 mM trehalose adds ≈ 100 mOsm/kg).`,
+        quantity: `${cryoInt}: 50 mg per 1.46 mmol; dissolve in filter-sterilised PBS. ${cryoCtrl}: 10 µL DMSO per 90 µL medium per vial.`,
+        duration: "1 h",
+        riskLevel: "med",
+        riskNote: "Room-temperature ${cryoInt} contact with cells before freezing induces osmotic stress, causing pre-freeze death that won't be distinguished from cryoinjury.",
+        validationChecks: ["Osmolality measured: record per condition.", "Solutions sterile; no turbidity or precipitation."],
+        decisionGate: "Reject any batch with osmolality > 700 mOsm/kg (hypertonicity risk) or if solution is turbid.",
+      },
+      {
+        title:  "Cryopreserve cells using controlled-rate freezing",
+        detail: `Resuspend ${cells} at 2 × 10⁶/mL in each cryoprotectant solution. Dispense 1 mL per cryovial. Place immediately in pre-cooled isopropanol freezing container (Mr. Frosty at 4°C). Transfer to −80°C overnight (≈ −1°C/min cooling rate). Next morning, transfer vials to liquid nitrogen (LN₂, −196°C) vapour phase for long-term storage. Log vial ID, cell line, passage, cryoprotectant, and freeze date.`,
+        quantity: "1 cryovial per condition, minimum n = 3 per concentration",
+        duration: "1 h hands-on + overnight",
+        riskLevel: "high",
+        riskNote: "Inconsistent cooling rate is the most common cause of non-reproducibility. Reusing Mr. Frosty without replacing isopropanol changes cooling rate profile by up to 0.4°C/min.",
+        validationChecks: ["Mr. Frosty isopropanol filled fresh.", "Transfer to LN₂ within 16–20 h of −80°C placement."],
+        decisionGate: "Discard any vials stored > 48 h at −80°C without transfer to LN₂.",
+      },
+      {
+        title:  `Thaw and recover cells — measure post-thaw viability (${assay})`,
+        detail: `Thaw vials rapidly in 37°C water bath (< 90 s). Transfer dropwise into 9 mL pre-warmed complete medium to dilute cryoprotectant (avoids osmotic shock). Centrifuge 300 × g, 5 min, 4°C. Discard supernatant. Resuspend pellet in 1 mL fresh medium. Count with haemocytometer; record viability (trypan blue) and live-cell density. Plate 5 × 10⁴ cells/well in 24-well plate for 4 h attachment before functional assays.`,
+        quantity: "24-well plate; 1 mL per well; trypan blue 0.4% — 10 µL per 10 µL cell suspension",
+        duration: "2 h",
+        riskLevel: "med",
+        riskNote: "Slow thawing (> 2 min) causes ice recrystallisation and magnifies cryoinjury. DMSO toxicity is significant at room temperature — dilute promptly.",
+        validationChecks: [
+          "Thaw < 90 s total.",
+          "Post-thaw viability recorded for each condition within 30 min of thaw.",
+          `Attach and measure ${assay} at 4 h and 24 h post-thaw.`,
+        ],
+        decisionGate: `Advance to statistical analysis only if ${cryoCtrl} post-thaw viability is within reported literature range (typically 70–85% for 10% DMSO).`,
+      },
+      {
+        title:  `Quantify ${assay} — clonogenic survival and metabolic activity`,
+        detail: `Run parallel readouts: (1) Trypan blue live-dead count (immediate); (2) Calcein AM / PI staining (1 µM calcein AM, 2 µM PI, 15 min, 37°C — read by fluorescence plate reader or confocal); (3) CellTiter-Glo ATP luminescence assay (quantitative metabolic proxy). Run ${cryoCtrl} (10% DMSO) and vehicle control (serum-free medium, no cryoprotectant) in parallel. Compare % viability and % recovery across all ${cryoInt} concentrations with one-way ANOVA + Tukey HSD post-hoc.`,
+        quantity: "96-well plates for calcein AM / CellTiter-Glo; n ≥ 4 replicates per concentration",
+        duration: "1 day",
+        riskLevel: "med",
+        riskNote: `Trypan blue alone underestimates sub-lethal cryoinjury. ATP assay and calcein AM capture functional recovery better and are more sensitive to dose-dependent effects of ${cryoInt}.`,
+        validationChecks: [
+          `${cryoCtrl} viability within ±10% of published DMSO benchmark.`,
+          "Calcein AM and ATP readouts correlated (R² ≥ 0.9).",
+          `Evidence of a significant ${intervention} effect vs ${control} at at least one concentration (p < 0.05).`,
+        ],
+        decisionGate: `Validate ${threshold} claim only if at least one ${cryoInt} concentration significantly outperforms ${cryoCtrl} on both viability metrics.`,
+      },
+    ];
+  }
+
+  /* ── ELECTROCHEMISTRY / BIOELECTROCHEMICAL / CO2 FIXATION ── */
+  if (/(electrochem|bioelectrochem|co2|acetate|sporomusa|cathode|carbon.capture|co₂)/.test(d) ||
+      /(co2|acetate|sporomusa|cathode|bioelectrochemical|she|carbon capture)/.test((parsed.intervention + " " + parsed.subject).toLowerCase())) {
+    const microbe   = mat(/(sporomusa|bacteria|microbe|strain|culture)/) || subject;
+    const substrate = mat(/(co2|carbon dioxide|co₂)/) || "CO₂ (100%, 30 mL/min)";
+    const product   = mat(/(acetate|acetic|formate|methane)/) || assay;
+    const cathode   = mat(/(electrode|cathode|carbon|graphite|ito|mxene)/) || "carbon felt cathode";
+    return [
+      {
+        title:  `Prepare and condition ${cathode} biocathode`,
+        detail: `Pre-treat ${cathode} by oxidative activation: soak in 1 M HNO₃ for 30 min, rinse 5× with UHQ water, then electrochemically condition with chronoamperometry at −1.0 V vs SHE in 50 mM phosphate buffer (pH 6.8) for 2 h. Measure electrochemical surface area (ECSA) by double-layer capacitance (CV, −0.1 to 0.1 V vs OCP, 5–200 mV/s). Record initial open-circuit potential (OCP) and impedance (EIS: 100 kHz – 0.1 Hz, 10 mV RMS).`,
+        quantity: `${cathode} — 2 cm² per bioreactor; HNO₃ 1 M — 50 mL`,
+        duration: "4 h",
+        riskLevel: "med",
+        riskNote: "Surface oxygen functional groups are required for bacterial attachment and electron transfer. Untreated carbon shows ECSA ≥ 40% lower and poor biofilm formation.",
+        validationChecks: ["ECSA measured, baseline recorded.", "EIS Nyquist plot shows no short-circuit artefacts.", "OCP stable ± 5 mV over 30 min."],
+        decisionGate: "Do not inoculate if ECSA < 2 mF/cm² or if electrode shows cracks or delamination.",
+      },
+      {
+        title:  `Inoculate bioreactor with ${microbe} — strict anaerobic protocol`,
+        detail: `Prepare ${microbe} mid-log phase culture (OD600 0.35–0.45) in modified DSMZ-311 medium. Sparge culture and bioreactor headspace with CO₂/N₂ (80:20) for 30 min before inoculation to achieve strict anaerobic conditions (< 5 ppm O₂). Transfer 10 mL culture into the working chamber (total volume 100 mL) via gas-tight syringe. Seal all ports. Apply −0.6 V vs SHE immediately to provide electron donor. Maintain 30°C, 100 rpm stirring.`,
+        quantity: `${microbe}: 10 mL mid-log culture per bioreactor; ${substrate}: 30 mL/min CO₂/N₂ sparge`,
+        duration: "1 h (setup) + 24 h equilibration",
+        riskLevel: "high",
+        riskNote: "O₂ contamination above 50 ppm is lethal to anaerobes and produces an oxidised cathode surface that reverses electron transfer polarity. This is the highest-risk step.",
+        validationChecks: [
+          "O₂ level in headspace ≤ 5 ppm (optical O₂ sensor).",
+          "OD600 within 0.35–0.45 at inoculation.",
+          "Reductive potential applied within 5 min of inoculation.",
+        ],
+        decisionGate: "Abort experiment if O₂ rises above 50 ppm at any point during inoculation.",
+      },
+      {
+        title:  `Apply cathodic potential and measure ${product} production`,
+        detail: `Set chronoamperometry at −0.6 V vs SHE (intervention arm) and −0.3 V vs SHE (reduced-potential control). Collect headspace gas samples (0.5 mL) every 4 h by gas-tight syringe for GC-FID/TCD analysis of CH₄, H₂, CO₂. Collect liquid aliquots (500 µL) every 6 h for HPLC (ion-exclusion column, 0.005 M H₂SO₄ mobile phase, 0.6 mL/min, RID detector) to quantify ${product} and any by-products (formate, ethanol). Record current density j (mA/cm²) continuously.`,
+        quantity: "Bioreactor working volume 100 mL; GC headspace sample 0.5 mL; HPLC sample 500 µL",
+        duration: "72 h continuous",
+        riskLevel: "high",
+        riskNote: `Under-potential (< −0.55 V vs SHE) favours H₂ evolution and suppresses acetogenesis. Over-potential (< −0.8 V vs SHE) causes abiotic H₂ release that confounds metabolic attribution of ${product}.`,
+        validationChecks: [
+          "Current density stable in range −1 to −5 mA/cm² after 12 h lag.",
+          `HPLC detects ${product} ≥ 0.1 mM at 24 h.`,
+          "No significant H₂ by-product if acetogenesis is the target pathway.",
+        ],
+        decisionGate: `Halt if current density drops below −0.2 mA/cm² by 24 h (biofilm failure). Do not claim acetogenesis if GC detects > 20% H₂ in headspace.`,
+      },
+      {
+        title:  "Characterise biofilm and electron-transfer mechanism",
+        detail: `At experiment end (72 h), remove ${cathode} from bioreactor under strict anaerobic transfer. Prepare triplicate samples for: (a) SEM/confocal fluorescence (LIVE/DEAD BacLight) — biofilm coverage and morphology; (b) EIS in fresh medium (no bacteria) — record change in Rct relative to abiotic baseline (should decrease for conductive biofilm); (c) Protein assay (BCA) — total biofilm protein per cm². Extract RNA from biofilm portion for RT-qPCR of key genes (acs, cooS) to confirm active metabolic pathway.`,
+        quantity: "3× electrode cross-sections; BCA assay kit (50 µL per well); RNA extraction kit",
+        duration: "1–2 days",
+        riskLevel: "med",
+        riskNote: "Correlation of biofilm coverage with current density and product titre is the mechanistic evidence. Without this data, the ${product} production cannot be attributed to the biofilm.",
+        validationChecks: [
+          "SEM shows biofilm cells on cathode, not in suspension.",
+          "EIS Rct reduced vs abiotic (evidence of direct electron transfer).",
+          "acs/cooS expression confirmed by RT-qPCR.",
+        ],
+        decisionGate: `Do not report ${product} yield as biologically attributable without RT-qPCR or EIS evidence of active biofilm.`,
+      },
+      {
+        title:  `Calculate Faradaic efficiency and benchmark ${assay} against literature`,
+        detail: `Faradaic efficiency (FE) = (n × F × n_product) / Q_total, where n is the number of electrons per mole of ${product} (8 for acetate), F = 96485 C/mol, n_product = moles of ${product} formed (from HPLC), Q_total = total charge passed (from integrating chronoamperometry). Compare against ${threshold}. Run statistical analysis (Student's t-test or Mann-Whitney if non-normal) comparing FE and product titre between ${intervention} and ${control} arms. Report with 95% CI.`,
+        quantity: "All data collected from steps 3–4",
+        duration: "4 h (analysis)",
+        riskLevel: "low",
+        riskNote: "Faradaic efficiency conflates electrode area, inoculum density, and applied potential. Report all three alongside FE to allow cross-study comparison.",
+        validationChecks: [
+          `FE meets or exceeds ${threshold}.`,
+          "Statistical test result reported with n and p-value.",
+          "Comparison to SHE control shows significant improvement (p < 0.05).",
+        ],
+        decisionGate: `Do not report benchmark claims without reporting absolute current density, working electrode area, and inoculum OD600 alongside FE.`,
+      },
+    ];
+  }
+
+  /* ── IN VIVO GUT HEALTH ── */
+  if (/(in.vivo|gut|intestinal|mouse|mice|c57bl|fitc|permeability|probiotic|barrier)/.test(d) ||
+      /(mouse|mice|c57bl|intestinal|fitc-dextran|in vivo|animal)/.test((parsed.intervention + " " + parsed.subject).toLowerCase())) {
+    const probiotic = mat(/(probiotic|bacterium|lacto|bifido|strain|supplement)/) || intervention;
+    const marker    = mat(/(fitc|dextran|fluorescein|marker|tracer)/) || "FITC-dextran (4 kDa)";
+    const strain    = (parsed.subject.match(/(c57bl|balb|nude|nod|cd-1)/i) || [""])[0] || "C57BL/6J";
+    return [
+      {
+        title:  `Animal ethics approval, acclimatisation, and group randomisation`,
+        detail: `Confirm institutional IACUC/ethics approval before any animal procedure. House ${strain} mice (n = 6–8 per group) in IVC cages, 12 h light-dark cycle, ad libitum food and water, 22 ± 2°C. Acclimatise for 7 days before any intervention. Randomise allocation into: (1) ${probiotic} arm, (2) ${control} arm, (3) sham/vehicle control. Record body weight on days 0, 3, 7, 14. Blind the ${assay} measurer to treatment allocation.`,
+        quantity: `n ≥ 6 mice per arm; total ≥ 18 animals; acclimatisation 7 days`,
+        duration: "7 days acclimatisation",
+        riskLevel: "high",
+        riskNote: "Underpowered studies (n < 5 per group) cannot resolve FITC-dextran permeability differences above 30%. Randomisation failure is the primary source of bias in gut permeability studies.",
+        validationChecks: [
+          "IACUC/ethics approval document on file.",
+          "Body weights between groups: non-significant at day 0.",
+          "Blinded measurer confirmed.",
+        ],
+        decisionGate: "Do not begin experimental intervention without confirmed ethics approval and blinded allocation.",
+      },
+      {
+        title:  `Administer ${probiotic} via oral gavage — daily dosing schedule`,
+        detail: `Prepare ${probiotic} dose in PBS or appropriate vehicle (1 × 10⁹ CFU/mL, 200 µL per animal gavage). Administer once daily for 14 days via ball-tipped gavage needle (22G, 38 mm). Control arm receives isocaloric PBS vehicle (200 µL). Weigh animals every 3 days. Record gavage compliance (any reflux or distress). At day 14, fast animals for 4 h before ${marker} gavage to standardise GI transit time.`,
+        quantity: `${probiotic}: 1 × 10⁹ CFU per animal per day, freshly prepared; total 14 doses`,
+        duration: "14 days treatment",
+        riskLevel: "med",
+        riskNote: "CFU counts must be validated on the day of gavage — stored cultures drift by > 1 log within 24 h if not maintained at correct temperature/atmosphere.",
+        validationChecks: [
+          "CFU count verified on plate count agar on each gavage day ± 0.3 log.",
+          "No mortality or body weight loss > 10% in any animal.",
+          "Positive and negative control groups maintained identically.",
+        ],
+        decisionGate: "Replace any animal with > 10% body weight loss from baseline (discuss with veterinary team). Do not extrapolate dosing day results to end-of-study if > 2 animals per group drop out.",
+      },
+      {
+        title:  `Intestinal permeability assay — oral ${marker} gavage and serum collection`,
+        detail: `On day 14, after 4 h fast: gavage each fasted animal with ${marker} at 44 mg/kg body weight in sterile PBS (200 µL). After 4 h, collect blood by cardiac puncture under terminal anaesthesia (isoflurane, 3%). Centrifuge blood (2000 × g, 10 min, 4°C) to obtain serum. Measure serum FITC fluorescence (ex/em 485/528 nm) in 96-well plate against standard curve (0–2000 ng/mL FITC-dextran in naive mouse serum). Express as ng/mL FITC-dextran in serum.`,
+        quantity: `${marker}: 44 mg/kg per mouse ≈ 8 mg per 200 µL gavage (20 g mouse); serum volume ≤ 50 µL per animal`,
+        duration: "4 h post-gavage + 1 h sample processing",
+        riskLevel: "high",
+        riskNote: "Timing is critical: FITC-dextran serum concentration peaks at 4 h post-gavage. Inconsistency in collection timing is the chief source of inter-animal variability.",
+        validationChecks: [
+          "Standard curve R² ≥ 0.99.",
+          "Collection time: 4.0 ± 0.25 h post-gavage for all animals.",
+          "Naive (untreated) positive-permeability control (DSS challenge if included) shows elevated FITC signal.",
+        ],
+        decisionGate: `Advance to statistical comparison only if ${control} arm serum FITC is in expected range (typically 150–400 ng/mL for naive C57BL/6 at 4 h).`,
+      },
+      {
+        title:  "Histology and tight-junction protein expression (secondary endpoint)",
+        detail: `Harvest 2 cm sections of proximal colon and jejunum from all animals. Fix in 10% neutral buffered formalin (NBF) for 24 h, paraffin-embed, and section (5 µm). Stain with H&E (morphology), Alcian Blue/PAS (goblet cells, mucus layer), and immunofluorescence for tight-junction proteins: ZO-1 (1:200), Occludin (1:100), Claudin-3 (1:150). Image at 200× magnification; score villus height-to-crypt depth ratio and ZO-1 continuity by blinded scorer.`,
+        quantity: "n = all animals; paraffin sections per animal: 6; primary antibodies: 3",
+        duration: "2–3 days (histology workflow)",
+        riskLevel: "med",
+        riskNote: "Histological changes lag 2–5 days behind functional permeability changes. ZO-1 fragment distribution is a more sensitive early marker than villus height alone.",
+        validationChecks: [
+          "Blinded scoring confirmed.",
+          "ZO-1 continuity scored semi-quantitatively (0–3 scale).",
+          "Goblet cell density quantified per villus cross-section.",
+        ],
+        decisionGate: "Histology requires a minimum of 4 complete tissue cross-sections per animal for valid scoring.",
+      },
+      {
+        title:  `Statistical analysis — compare ${assay} between ${intervention} and ${control}`,
+        detail: `Primary endpoint: serum FITC-dextran (ng/mL). Perform Shapiro-Wilk normality test per group. If normal: unpaired two-tailed Student's t-test (${probiotic} vs ${control}). If non-normal: Mann-Whitney U. Report mean ± SEM, actual p-value, effect size (Cohen's d), and 95% CI. Secondary endpoint: ZO-1 continuity score — use same approach. Power analysis post-hoc: was the study powered to detect a 30% reduction in FITC at α = 0.05, β = 0.2?`,
+        quantity: "All collected serum + histological data",
+        duration: "4 h (analysis)",
+        riskLevel: "low",
+        riskNote: "Without reporting effect size alongside p-value, the clinical relevance of gut barrier improvement cannot be assessed.",
+        validationChecks: [
+          "Normality test run and result reported.",
+          "Effect size and 95% CI reported alongside p-value.",
+          `Stated hypothesis threshold (${threshold}) confirmed met or not met with exact FITC values.`,
+        ],
+        decisionGate: `Report ${threshold} as met only if both the serum FITC reduction is statistically significant (p < 0.05) and the effect size is clinically meaningful (Cohen's d ≥ 0.5).`,
+      },
+    ];
+  }
+
+  /* ── GENERIC MOLECULAR BIOLOGY / FALLBACK ── */
+  return null; // caller will use the standard generic flow
+}
+
+function buildDynamicSteps(parsed, evidencePack, materials = []) {
+  const assay        = parsed.outcome || "primary readout";
+  const intervention = parsed.intervention || "the primary reagent";
+  const control      = parsed.control || "matched control";
+  const subject      = parsed.subject || "experimental system";
+  const mechanism    = parsed.mechanism || "";
+  const domainKey    = (parsed.domain || "").toLowerCase();
 
   const protocolRef = evidencePack.items.find((item) => item.source === "protocols.io");
 
-  /* ── Step 0: Literature & hypothesis alignment ── */
+  /* ── Try domain-specific spine first ── */
+  const domainStepTemplates = domainProtocolSpine(domainKey, parsed, materials);
+
+  if (domainStepTemplates) {
+    /* Assign IDs, inject relevant evidence references, and return */
+    return domainStepTemplates.map((tpl, idx) => {
+      const ref = refForStep(evidencePack, idx);
+      return {
+        id: `step-${idx + 1}`,
+        title:   tpl.title,
+        detail:  tpl.detail + (ref && ref.title ? ` Supporting reference: "${ref.title}" (${ref.source}).` : ""),
+        quantity: tpl.quantity,
+        duration: tpl.duration,
+        source:   ref?.source || "Literature",
+        sourceUri: ref?.url || (ref?.doi ? `https://doi.org/${ref.doi}` : ""),
+        sourceTitle: ref?.title || tpl.title,
+        riskLevel:   tpl.riskLevel || "med",
+        riskNote:    tpl.riskNote || "",
+        validationChecks: tpl.validationChecks || [],
+        decisionGate: tpl.decisionGate,
+      };
+    });
+  }
+
+  /* ── Generic / molecular biology fallback ── */
   const ref0 = refForStep(evidencePack, 0);
   const steps = [];
+
   steps.push({
     id: "step-1",
     title: "Align hypothesis against retrieved precedent",
@@ -955,7 +1302,6 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     decisionGate: "Do not procure materials until scientist confirms the retrieved precedent justifies the planned assay format.",
   });
 
-  /* ── Steps per material ── */
   materials.slice(0, 5).forEach((mat, idx) => {
     const ref = refForStep(evidencePack, idx + 1);
     const qty = stepQuantity(mat.name);
@@ -966,11 +1312,11 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
       detail: `${isPrimary ? "Intervention reagent" : "Supporting reagent"}: ${mat.name}${mat.molecularFormula ? ` (${mat.molecularFormula}` : ""}${mat.molecularWeight ? `, MW ${mat.molecularWeight.toFixed(1)} g/mol)` : (mat.molecularFormula ? ")" : "")}. Quantity: ${qty}. ${mat.iupacName ? `IUPAC: ${mat.iupacName}. ` : ""}${protocolRef?.protocolMaterials ? `Protocol notes: ${protocolRef.protocolMaterials.slice(0, 180)}.` : "Prepare in accordance with supplier specification and retrieved protocol standard."}`,
       quantity: qty,
       duration: idx === 0 ? "2 h" : "1 h",
-      source: ref?.source || mat.supplier || "PubChem",
-      sourceUri: mat.sourceUri || (ref?.url) || (ref?.doi ? `https://doi.org/${ref.doi}` : "") || (mat.pubchemCid ? `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}` : ""),
+      source:   ref?.source || mat.supplier || "PubChem",
+      sourceUri: mat.sourceUri || ref?.url || (ref?.doi ? `https://doi.org/${ref.doi}` : "") || (mat.pubchemCid ? `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}` : ""),
       sourceTitle: ref?.title || mat.name,
-      riskLevel: isPrimary ? "med" : "low",
-      riskNote: isPrimary
+      riskLevel:  isPrimary ? "med" : "low",
+      riskNote:   isPrimary
         ? `Purity and stoichiometry of ${mat.name} directly set the signal-to-noise of ${assay}.`
         : `Ensure ${mat.name} is compatible with buffer conditions used for the primary assay.`,
       validationChecks: [
@@ -983,19 +1329,18 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     });
   });
 
-  /* ── Assay execution step ── */
   const refAssay = refForStep(evidencePack, steps.length);
   steps.push({
     id: `step-${steps.length + 1}`,
     title: `Execute primary assay — measure ${assay}`,
     detail: `Apply the prepared ${intervention} to the ${subject} under matched conditions. Run ${control} in parallel. Record ${assay} at all specified time points. ${protocolRef ? `Follow the retrieved protocol procedure: "${(protocolRef.protocolDescription || "").slice(0, 200)}".` : ""}`,
-    quantity: `Pilot n ≥ 3 replicates per arm`,
+    quantity: "Pilot n ≥ 3 replicates per arm",
     duration: "1–2 days",
-    source: refAssay?.source || "Literature",
+    source:   refAssay?.source || "Literature",
     sourceUri: refAssay?.url || (refAssay?.doi ? `https://doi.org/${refAssay.doi}` : ""),
     sourceTitle: refAssay?.title || "Primary assay reference",
     riskLevel: "high",
-    riskNote: `Incorrect timing, normalization, or control condition for ${assay} is the dominant scientific risk.`,
+    riskNote: `Incorrect timing, normalisation, or control condition for ${assay} is the dominant scientific risk.`,
     validationChecks: [
       "Signal separated between intervention and control before proceeding.",
       "All replicates within 20% CV.",
@@ -1003,19 +1348,18 @@ function buildDynamicSteps(parsed, evidencePack, materials = []) {
     decisionGate: `Advance only if pilot data show interpretable signal in the expected direction for ${assay}.`,
   });
 
-  /* ── Analysis & benchmark step ── */
   const refBench = refForStep(evidencePack, steps.length);
   steps.push({
     id: `step-${steps.length + 1}`,
     title: "Analyse results and benchmark against literature",
-    detail: `Compare observed outcomes for ${assay} against the threshold in the hypothesis (${parsed.threshold || "see hypothesis"}). Overlay with retrieved literature benchmarks. Document divergences and mark whether they are scientific choices or operational constraints.`,
+    detail: `Compare observed outcomes for ${assay} against the threshold in the hypothesis (${parsed.threshold || "see hypothesis"}). Overlay with retrieved literature benchmarks. Document divergences.`,
     quantity: "1 analysis pass (≈ 4 h)",
     duration: "4 h",
-    source: refBench?.source || "Literature",
+    source:   refBench?.source || "Literature",
     sourceUri: refBench?.url || (refBench?.doi ? `https://doi.org/${refBench.doi}` : ""),
     sourceTitle: refBench?.title || "Benchmark reference",
     riskLevel: "low",
-    riskNote: "A plan can look scientifically plausible yet still fail operationally if timing, variance, or procurement diverges from precedent.",
+    riskNote: "A plan can look scientifically plausible yet still fail if timing, variance, or procurement diverges from precedent.",
     validationChecks: [
       "All divergences from retrieved literature documented and classified.",
       "Decision gate for next iteration recorded.",

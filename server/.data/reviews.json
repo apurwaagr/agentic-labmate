@@ -3,6 +3,19 @@
     "experimentId": "cell-biology-trehalose",
     "section": "General",
     "reviewer": "Scientist",
+    "correction": "Another reference for HeLa",
+    "severity": "medium",
+    "domain": "Cell Biology",
+    "hypothesis": "CRISPR-Cas9 mediated knockout of TP53 in HeLa cells will result in altered cell cycle progression and increased resistance to DNA-damaging agents.",
+    "tags": [
+      "Cell Biology",
+      "General"
+    ]
+  },
+  {
+    "experimentId": "cell-biology-trehalose",
+    "section": "General",
+    "reviewer": "Scientist",
     "correction": "add the design rview",
     "severity": "medium",
     "domain": "Cell Biology",

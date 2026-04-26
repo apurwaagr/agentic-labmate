@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BookOpen, ChevronDown, DollarSign, ExternalLink, Info, MessageSquareWarning, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, DollarSign, ExternalLink, Info, MessageSquareWarning, Send, ShieldCheck, Sparkles, XCircle } from "lucide-react";
 import {
   budgetRegions,
   adjustedBudgetAmount,
@@ -10,8 +10,6 @@ import {
   type ExperimentPlan,
   type ReviewRecord,
 } from "@/lib/labApi";
-import { MoleculeCard } from "@/components/lab/MoleculeCard";
-
 function referenceHref(source: string, uri?: string) {
   if (uri) {
     return uri;
@@ -80,31 +78,114 @@ export function ContextStore({
   return (
     <aside className="w-full xl:w-[360px] shrink-0 flex flex-col gap-3 p-3 border-l border-border bg-surface overflow-y-auto h-full">
 
-      {/* Literature & Novelty */}
-      <div className="rounded-2xl bg-panel border border-border p-3.5 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <BookOpen className="size-3.5 text-primary" />
-            <h3 className="text-sm font-semibold">Literature &amp; Novelty</h3>
+      {/* Literature & Novelty — enhanced */}
+      <div className="rounded-2xl bg-panel border border-border shadow-sm overflow-hidden">
+        {/* Signal header */}
+        {(() => {
+          const sig = plan.novelty.signal;
+          const isExact = sig === "exact match found";
+          const isSimilar = sig === "similar work exists";
+          const headerCls = isExact
+            ? "bg-danger-soft/60 border-b border-danger/20"
+            : isSimilar
+            ? "bg-warning-soft/60 border-b border-warning/20"
+            : "bg-success-soft/60 border-b border-success/20";
+          const icon = isExact ? <XCircle className="size-4 text-danger" /> : isSimilar ? <AlertTriangle className="size-4 text-warning" /> : <Sparkles className="size-4 text-success" />;
+          const badge = isExact
+            ? "border-danger/30 bg-danger-soft text-danger"
+            : isSimilar
+            ? "border-warning/30 bg-warning-soft text-warning"
+            : "border-success/30 bg-success-soft text-success";
+          const score = isExact ? 92 : isSimilar ? 54 : 18;
+          const advice = isExact
+            ? "Strong precedent found — adapt the protocol rather than treating this as greenfield. Differentiate on method, scale, or system."
+            : isSimilar
+            ? "Related work exists — confirm your intervention-outcome pair is novel. Review the references below before finalising the design."
+            : "Weak or no precedent — this may be genuinely novel, or retrieval coverage was low. Validate with a manual literature search.";
+          return (
+            <>
+              <div className={`flex items-center gap-2.5 px-3.5 py-3 ${headerCls}`}>
+                {icon}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-0.5">Novelty Signal</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${badge}`}>{sig}</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${isExact ? "bg-danger" : isSimilar ? "bg-warning" : "bg-success"}`}
+                        style={{ width: `${score}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{score}%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="px-3.5 pt-2.5 pb-1">
+                <div className="flex items-start gap-1.5 rounded-lg border border-border bg-muted/25 px-2.5 py-1.5 text-[11px] text-foreground/80 leading-snug mb-2.5">
+                  <Info className="size-3 shrink-0 mt-0.5 text-primary" />
+                  {advice}
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-2.5">{plan.novelty.summary}</p>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* References — title + source + link */}
+        {plan.novelty.references.length > 0 && (
+          <div className="border-t border-border px-3.5 pt-2.5 pb-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <BookOpen className="size-3 text-primary" />
+              Retrieved references ({plan.novelty.references.length})
+            </div>
+            <div className="space-y-1.5">
+              {plan.novelty.references.map((reference, i) => (
+                <a
+                  key={reference.source + i}
+                  href={referenceHref(reference.source, reference.uri)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-2 rounded-lg border border-border bg-muted/25 px-2.5 py-2 hover:border-primary/30 hover:bg-primary-soft/20 transition-colors group"
+                >
+                  <CheckCircle2 className="size-3 shrink-0 mt-0.5 text-primary/50 group-hover:text-primary transition-colors" />
+                  <div className="flex-1 min-w-0">
+                    {reference.title && (
+                      <div className="text-[11px] font-medium text-foreground/85 line-clamp-2 group-hover:text-primary transition-colors leading-snug">
+                        {reference.title}
+                      </div>
+                    )}
+                    <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <ExternalLink className="size-2.5 shrink-0" />
+                      <span className="truncate">{reference.source}</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success-soft text-success border border-success/30">Grounded</span>
-        </div>
-        <div className="text-xs font-semibold text-foreground mb-1">{plan.novelty.signal}</div>
-        <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-3 mb-2">{plan.novelty.summary}</p>
-        <div className="flex flex-wrap gap-1">
-          {plan.novelty.references.map((reference) => (
-            <a
-              key={reference.source}
-              href={referenceHref(reference.source, reference.uri)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
-            >
-              <ExternalLink className="size-2.5" />
-              {reference.source}
-            </a>
-          ))}
-        </div>
+        )}
+
+        {/* Source chip row (quick links) */}
+        {plan.sources && plan.sources.length > 0 && (
+          <div className="border-t border-border px-3.5 pt-2 pb-3">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">All plan sources</div>
+            <div className="flex flex-wrap gap-1">
+              {plan.sources.map((source) => (
+                <a
+                  key={source.source}
+                  href={referenceHref(source.source, source.uri)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+                  title={source.title}
+                >
+                  <ExternalLink className="size-2.5" />
+                  {source.source}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Operational Budget — collapsible */}
@@ -204,8 +285,6 @@ export function ContextStore({
           </div>
         )}
       </div>
-
-      <MoleculeCard plan={plan} />
 
       {/* Scientist Sanity Check */}
       <div className="rounded-2xl bg-panel border border-border p-3.5 shadow-sm">

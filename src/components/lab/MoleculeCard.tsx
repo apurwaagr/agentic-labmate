@@ -1,670 +1,177 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Atom, BookOpen, ChevronDown, ExternalLink, FlaskConical, Orbit, Plus, RotateCw, Info, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
-import { moleculeForPlan, type ExperimentPlan, type MoleculeModel } from "@/lib/labApi";
+import { useState } from "react";
+import { BookOpen, CheckCircle2, ExternalLink, FlaskConical, ShieldCheck, Sparkles } from "lucide-react";
+import type { ExperimentPlan } from "@/lib/labApi";
 
-const elementColor: Record<string, string> = {
-  C:  "bg-slate-700 text-white",
-  O:  "bg-rose-500 text-white",
-  N:  "bg-sky-500 text-white",
-  S:  "bg-amber-500 text-slate-950",
-  H:  "bg-slate-200 text-slate-950",
-  Fe: "bg-orange-600 text-white",
-  Cl: "bg-emerald-600 text-white",
-  P:  "bg-orange-400 text-slate-950",
-};
-
-const elementFullName: Record<string, string> = {
-  C:  "Carbon",
-  O:  "Oxygen",
-  N:  "Nitrogen",
-  S:  "Sulphur",
-  H:  "Hydrogen",
-  Fe: "Iron (Fe²⁺/Fe³⁺ redox centre)",
-  Cl: "Chlorine",
-  P:  "Phosphorus",
-};
-
-function rotateAtom(atom: MoleculeModel["atoms"][number], rotation: number) {
-  const radians = (rotation * Math.PI) / 180;
-  return {
-    ...atom,
-    x: atom.x * Math.cos(radians) - atom.z * Math.sin(radians),
-    z: atom.x * Math.sin(radians) + atom.z * Math.cos(radians),
-  };
-}
-
-function planKeywords(plan: ExperimentPlan) {
-  return [
-    plan.project,
-    plan.hypothesis,
-    plan.plainEnglish,
-    plan.domain,
-    ...plan.materials.map((m) => m.name),
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-function comparatorModelsForPlan(plan: ExperimentPlan, base: MoleculeModel) {
-  const domain = plan.domain.toLowerCase();
-  const keywords = planKeywords(plan);
-
-  if (domain.includes("cell biology")) {
-    return [
-      base,
-      {
-        name: "DMSO control",
-        formula: "C2H6OS",
-        note: "Control cryoprotectant for comparing osmotic and membrane-stabilization assumptions against trehalose.",
-        editableHint: "Compare the intervention against the standard DMSO control and record whether the hypothesis should change.",
-        atoms: [
-          { id: "s1", element: "S", x: 0, y: 0, z: 0.2 },
-          { id: "o1", element: "O", x: 1.1, y: -0.4, z: 0.3 },
-          { id: "c1", element: "C", x: -1.1, y: -0.2, z: -0.1 },
-          { id: "c2", element: "C", x: 0.1, y: 1.2, z: -0.2 },
-        ],
-        bonds: [
-          { from: "s1", to: "o1" },
-          { from: "s1", to: "c1" },
-          { from: "s1", to: "c2" },
-        ],
-      },
-    ];
+/** Domain  colour theme + icon + science-context label */
+function domainVisual(domain: string) {
+  const d = domain.toLowerCase();
+  if (d.includes("diagnostic") || d.includes("biosensor") || d.includes("immunoassay")) {
+    return { bg: "from-sky-50 to-indigo-50", icon: "", label: "Diagnostic / Biosensor", subtitle: "Electrochemical surface functionalisation  antibodyantigen binding", accent: "text-sky-700" };
   }
-
-  if (domain.includes("diagnostics")) {
-    const isBiosensor =
-      keywords.includes("biosensor") ||
-      keywords.includes("electrochemical") ||
-      keywords.includes("crp") ||
-      keywords.includes("c-reactive protein") ||
-      keywords.includes("antibod");
-
-    if (isBiosensor) {
-      // Comparator: Ferrocene (PubChem CID 7692) — the amperometric redox reporter
-      // that generates the Faradaic current attenuated by CRP binding.
-      return [
-        base,
-        {
-          name: "Ferrocene (redox reporter)",
-          formula: "C₁₀H₁₀Fe · PubChem CID 7692",
-          note: "The reversible Fe²⁺/Fe³⁺ redox couple (E° ≈ +0.40 V vs. SCE) that generates the amperometric signal. Current decreases as CRP binds and blocks electron transfer between the Cp ring and the electrode surface.",
-          editableHint: "The Fe sandwich between two cyclopentadienyl (Cp) rings provides the redox readout. Use the 3D view to reason about how the bulky CRP binding event sterically blocks the Fe centre from the electrode surface, attenuating current.",
-          atoms: [
-            { id: "fe1", element: "Fe", x:  0.00, y:  0.00, z:  0.00 },
-            // Upper Cp ring (z = +1.65 Å)
-            { id: "c1",  element: "C",  x:  0.70, y:  0.00, z:  1.65 },
-            { id: "c2",  element: "C",  x:  0.22, y:  0.68, z:  1.65 },
-            { id: "c3",  element: "C",  x: -0.58, y:  0.42, z:  1.65 },
-            { id: "c4",  element: "C",  x: -0.58, y: -0.42, z:  1.65 },
-            { id: "c5",  element: "C",  x:  0.22, y: -0.68, z:  1.65 },
-            // Lower Cp ring (z = −1.65 Å, staggered 36°)
-            { id: "c6",  element: "C",  x:  0.58, y:  0.42, z: -1.65 },
-            { id: "c7",  element: "C",  x: -0.22, y:  0.68, z: -1.65 },
-            { id: "c8",  element: "C",  x: -0.70, y:  0.00, z: -1.65 },
-            { id: "c9",  element: "C",  x: -0.22, y: -0.68, z: -1.65 },
-            { id: "c10", element: "C",  x:  0.58, y: -0.42, z: -1.65 },
-          ],
-          bonds: [
-            { from: "c1",  to: "c2"  }, { from: "c2",  to: "c3"  },
-            { from: "c3",  to: "c4"  }, { from: "c4",  to: "c5"  },
-            { from: "c5",  to: "c1"  },
-            { from: "c6",  to: "c7"  }, { from: "c7",  to: "c8"  },
-            { from: "c8",  to: "c9"  }, { from: "c9",  to: "c10" },
-            { from: "c10", to: "c6"  },
-            { from: "fe1", to: "c1"  }, { from: "fe1", to: "c8"  },
-          ],
-        },
-      ];
-    }
-
-    // Generic diagnostics interferent for non-biosensor plans
-    return [
-      base,
-      {
-        name: "Whole-blood interferent cue",
-        formula: "Matrix control",
-        note: "Use this control view to reason about whole-blood matrix interference against the intended assay binding surface.",
-        editableHint: "Compare target and interferent arrangements while discussing selectivity and non-specific binding risk.",
-        atoms: [
-          { id: "n1", element: "N", x: -0.8, y: -0.5, z: 0.1 },
-          { id: "c1", element: "C", x:  0.2, y: -0.1, z: -0.1 },
-          { id: "o1", element: "O", x:  1.3, y: -0.7, z: 0.2 },
-          { id: "s1", element: "S", x:  0.7, y:  1.1, z: 0.1 },
-        ],
-        bonds: [
-          { from: "n1", to: "c1" },
-          { from: "c1", to: "o1" },
-          { from: "c1", to: "s1" },
-        ],
-      },
-    ];
+  if (d.includes("electrochemistry") || d.includes("electrode") || d.includes("electrosynthesis")) {
+    return { bg: "from-amber-50 to-orange-50", icon: "", label: "Electrochemistry", subtitle: "Electron transfer  catalytic reduction  bioelectrosynthesis", accent: "text-amber-700" };
   }
-
-  if (domain.includes("electrochemistry")) {
-    return [
-      base,
-      {
-        name: "CO2 feed cue",
-        formula: "CO2",
-        note: "Compare the substrate cue against the acetate product when discussing electron transfer and benchmarking logic.",
-        editableHint: "Switch between feed and product views to test whether the mechanistic story in the plan actually makes sense.",
-        atoms: [
-          { id: "o1", element: "O", x: -1.1, y: 0, z: 0.1 },
-          { id: "c1", element: "C", x: 0, y: 0, z: -0.1 },
-          { id: "o2", element: "O", x: 1.1, y: 0, z: 0.1 },
-        ],
-        bonds: [
-          { from: "o1", to: "c1" },
-          { from: "c1", to: "o2" },
-        ],
-      },
-    ];
+  if (d.includes("cell biology") || d.includes("cryopreservation") || d.includes("tissue")) {
+    return { bg: "from-emerald-50 to-teal-50", icon: "", label: "Cell Biology", subtitle: "Membrane stabilisation  osmotic stress  cryoprotection", accent: "text-emerald-700" };
   }
-
-  return [
-    base,
-    {
-      name: "Mechanistic control cue",
-      formula: "Control state",
-      note: "Use this comparison state to sketch a control or competing mechanism beside the main representative molecule.",
-      editableHint: "Scientists can compare intervention and control sketches to decide whether the hypothesis has a defensible mechanistic contrast.",
-      atoms: [
-        { id: "c1", element: "C", x: -0.8, y: 0.2, z: 0 },
-        { id: "o1", element: "O", x: 0.1, y: -0.7, z: 0.2 },
-        { id: "n1", element: "N", x: 1.0, y: 0.3, z: -0.1 },
-      ],
-      bonds: [
-        { from: "c1", to: "o1" },
-        { from: "o1", to: "n1" },
-      ],
-    },
-  ];
-}
-
-function protocolContextForPlan(plan: ExperimentPlan) {
-  const protocolSource = plan.sources.find((source) => source.source.toLowerCase().includes("protocols.io"));
-  const protocolStep = plan.steps.find((step) => step.source.toLowerCase().includes("protocol"));
-
-  return {
-    hasProtocolSource: Boolean(protocolSource || protocolStep),
-    label: protocolSource?.title || protocolStep?.title || "Protocol-linked plan context",
-    source: protocolSource?.source || protocolStep?.source || null,
-  };
+  if (d.includes("organic") || d.includes("synthesis") || d.includes("chemistry")) {
+    return { bg: "from-violet-50 to-purple-50", icon: "", label: "Organic Chemistry", subtitle: "Reaction design  reagent stoichiometry  yield optimisation", accent: "text-violet-700" };
+  }
+  if (d.includes("microbiome") || d.includes("microbiolog") || d.includes("gut")) {
+    return { bg: "from-lime-50 to-green-50", icon: "", label: "Microbiology", subtitle: "Microbial culture  colonisation  barrier integrity", accent: "text-lime-700" };
+  }
+  if (d.includes("drug") || d.includes("pharmacol") || d.includes("therapeut")) {
+    return { bg: "from-rose-50 to-pink-50", icon: "", label: "Drug Discovery", subtitle: "Target engagement  in-vitro ADMET  hit-to-lead", accent: "text-rose-700" };
+  }
+  if (d.includes("genomic") || d.includes("sequencing") || d.includes("pcr") || d.includes("dna")) {
+    return { bg: "from-cyan-50 to-blue-50", icon: "", label: "Genomics / Molecular Biology", subtitle: "Nucleic acid amplification  sequencing  primer design", accent: "text-cyan-700" };
+  }
+  return { bg: "from-slate-50 to-zinc-50", icon: "", label: "Life Science", subtitle: "Hypothesis-driven experimental design", accent: "text-slate-600" };
 }
 
 export function MoleculeCard({ plan }: { plan: ExperimentPlan }) {
-  const presets = useMemo(() => comparatorModelsForPlan(plan, moleculeForPlan(plan)), [plan]);
-  const protocolContext = useMemo(() => protocolContextForPlan(plan), [plan]);
-  const [presetIndex, setPresetIndex] = useState(0);
-  const [mode, setMode] = useState<"2d" | "3d">("3d");
-  const [rotation, setRotation] = useState(18);
-  const [spread, setSpread] = useState(18);
-  const [model, setModel] = useState(presets[0]);
-  const [selectedAtomId, setSelectedAtomId] = useState(presets[0].atoms[0]?.id ?? null);
-  const [annotation, setAnnotation] = useState("");
-  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [annotation, setAnnotation] = useState(() => {
+    try { return localStorage.getItem(`agentic-labmate-molecule-note-${plan.id}`) || ""; } catch { return ""; }
+  });
 
-  useEffect(() => {
-    const current = presets[presetIndex] || presets[0];
-    setModel(current);
-    setSelectedAtomId(current.atoms[0]?.id ?? null);
-    setRotation(18);
-    setSpread(18);
-  }, [presetIndex, presets]);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(`agentic-labmate-molecule-note-${plan.id}`);
-    setAnnotation(stored || "");
-  }, [plan.id]);
-
-  useEffect(() => {
-    window.localStorage.setItem(`agentic-labmate-molecule-note-${plan.id}`, annotation);
-  }, [plan.id, annotation]);
-
-  const projectedAtoms = useMemo(
-    () =>
-      model.atoms.map((atom) => {
-        const rotated = mode === "3d" ? rotateAtom(atom, rotation) : atom;
-        const depth = mode === "3d" ? (rotated.z + 2.2) / 4.4 : 0.5;
-        return {
-          ...rotated,
-          depth,
-          left: 50 + rotated.x * spread,
-          top: 50 + rotated.y * spread,
-          size: 18 + depth * 14,
-        };
-      }),
-    [mode, model.atoms, rotation, spread],
-  );
-
-  const selectedAtom = model.atoms.find((atom) => atom.id === selectedAtomId) ?? null;
-
-  function updateAtom(atomId: string, next: Partial<MoleculeModel["atoms"][number]>) {
-    setModel((current) => ({
-      ...current,
-      atoms: current.atoms.map((atom) => (atom.id === atomId ? { ...atom, ...next } : atom)),
-    }));
+  function saveAnnotation(value: string) {
+    setAnnotation(value);
+    try { localStorage.setItem(`agentic-labmate-molecule-note-${plan.id}`, value); } catch { /* ignore */ }
   }
 
-  function handleCanvasMove(event: React.PointerEvent<HTMLDivElement>, atomId: string) {
-    if (!canvasRef.current) {
-      return;
-    }
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width - 0.5) * (100 / spread);
-    const y = ((event.clientY - rect.top) / rect.height - 0.5) * (100 / spread);
-    updateAtom(atomId, {
-      x: Number(x.toFixed(2)),
-      y: Number(y.toFixed(2)),
-    });
-  }
-
-  function addAtom() {
-    const nextId = `x${model.atoms.length + 1}`;
-    setModel((current) => ({
-      ...current,
-      atoms: [...current.atoms, { id: nextId, element: "C", x: 0, y: 0, z: 0 }],
-      bonds: current.atoms[0] ? [...current.bonds, { from: current.atoms[0].id, to: nextId }] : current.bonds,
-    }));
-    setSelectedAtomId(nextId);
-  }
+  const visual = domainVisual(plan.domain);
+  const pubchemMaterials = plan.materials.filter((m) => m.pubchemCid);
 
   return (
-    <section className="rounded-2xl border border-border bg-panel p-4 shadow-sm">
-      {/* ── Section header ── */}
-      <header className="mb-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-              {mode === "3d" ? <Orbit className="size-3.5" /> : <Atom className="size-3.5" />}
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold leading-tight">Compound Reference</h3>
-              <p className="text-[11px] text-muted-foreground">Project-linked structural context for planning</p>
-            </div>
-          </div>
-          {protocolContext.hasProtocolSource && (
-            <span className="rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] text-primary">
-              Protocol-linked
-            </span>
-          )}
-        </div>
-      </header>
+    <section className="rounded-2xl border border-border bg-panel shadow-sm overflow-hidden">
 
-      {/* ── Target compound — highlighted panel with lit ref ── */}
-      {plan.targetCompound && (
-        <div className="mb-4 rounded-xl border-2 border-accent/30 bg-accent-soft/30 p-3.5">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-foreground">
-              <Sparkles className="size-3" />
-              Target / Final Compound
+      {/* Domain science header */}
+      <div className={`bg-gradient-to-r ${visual.bg} border-b border-border px-5 py-4`}>
+        <div className="flex items-start gap-3">
+          <div className="text-3xl leading-none select-none">{visual.icon}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${visual.accent}`}>{visual.label}</span>
+              <span className="text-[10px] text-muted-foreground"></span>
+              <span className="text-[10px] text-muted-foreground">{visual.subtitle}</span>
             </div>
-            {plan.targetCompound.pubchemCid && (
-              <a
-                href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-panel px-2 py-0.5 text-[10px] text-accent-foreground hover:bg-accent-soft transition-colors"
-              >
-                <ExternalLink className="size-2.5" />
-                PubChem CID {plan.targetCompound.pubchemCid}
-              </a>
+            <h3 className="mt-1 text-sm font-semibold leading-snug line-clamp-2">{plan.project}</h3>
+            {plan.plainEnglish && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{plan.plainEnglish}</p>
             )}
           </div>
-          <div className="flex gap-3 items-start">
-            {plan.targetCompound.pubchemCid && (
-              <img
-                src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${plan.targetCompound.pubchemCid}/PNG?image_size=large`}
-                alt={`${plan.targetCompound.name} 2D structure`}
-                className="h-28 w-28 shrink-0 rounded-xl border border-border bg-white object-contain shadow-sm"
-              />
-            )}
-            <div className="space-y-1 text-xs min-w-0 flex-1">
-              <div className="font-semibold text-sm">{plan.targetCompound.name}</div>
-              {plan.targetCompound.molecularFormula && (
-                <div className="font-mono text-[11px] text-muted-foreground">{plan.targetCompound.molecularFormula}{plan.targetCompound.molecularWeight ? ` · ${plan.targetCompound.molecularWeight.toFixed(1)} g/mol` : ""}</div>
-              )}
-              {plan.targetCompound.iupacName && (
-                <div className="text-[11px] text-muted-foreground truncate" title={plan.targetCompound.iupacName}>{plan.targetCompound.iupacName}</div>
-              )}
-              {plan.targetCompound.literatureRef && (
-                <a
-                  href={plan.targetCompound.literatureRef.uri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2 py-0.5 text-[10px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-                >
-                  <BookOpen className="size-2.5" />
-                  <span className="max-w-[200px] truncate">{plan.targetCompound.literatureRef.title}</span>
-                  <ExternalLink className="size-2.5 opacity-60" />
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+
+        {/* Target / final compound */}
+        {plan.targetCompound && (
+          <div className="rounded-xl border-2 border-accent/30 bg-accent-soft/30 p-3.5">
+            <div className="mb-2.5 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-foreground">
+                <Sparkles className="size-3" />
+                Target / Final Compound
+              </div>
+              {plan.targetCompound.pubchemCid && (
+                <a href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/25 bg-panel px-2 py-0.5 text-[10px] text-accent-foreground hover:bg-accent-soft transition-colors">
+                  <ExternalLink className="size-2.5" />
+                  PubChem CID {plan.targetCompound.pubchemCid}
                 </a>
               )}
             </div>
+            <div className="flex gap-3 items-start">
+              {plan.targetCompound.pubchemCid && (
+                <a href={`https://pubchem.ncbi.nlm.nih.gov/compound/${plan.targetCompound.pubchemCid}`} target="_blank" rel="noreferrer" className="shrink-0">
+                  <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${plan.targetCompound.pubchemCid}/PNG?image_size=large`}
+                    alt={`${plan.targetCompound.name} 2D structure`}
+                    className="h-28 w-28 rounded-xl border border-border bg-white object-contain shadow-sm hover:shadow-md transition-shadow" />
+                </a>
+              )}
+              <div className="space-y-1.5 text-xs min-w-0 flex-1">
+                <div className="font-semibold text-sm leading-snug">{plan.targetCompound.name}</div>
+                {plan.targetCompound.molecularFormula && (
+                  <div className="font-mono text-[11px] text-muted-foreground">
+                    {plan.targetCompound.molecularFormula}{plan.targetCompound.molecularWeight ? `  ${plan.targetCompound.molecularWeight.toFixed(1)} g/mol` : ""}
+                  </div>
+                )}
+                {plan.targetCompound.iupacName && (
+                  <div className="text-[11px] text-muted-foreground line-clamp-2 leading-snug" title={plan.targetCompound.iupacName}>{plan.targetCompound.iupacName}</div>
+                )}
+                {plan.targetCompound.literatureRef && plan.targetCompound.literatureRef.uri && (
+                  <a href={plan.targetCompound.literatureRef.uri} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2 py-0.5 text-[10px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors">
+                    <BookOpen className="size-2.5" />
+                    <span className="max-w-[200px] truncate">{plan.targetCompound.literatureRef.title}</span>
+                    <ExternalLink className="size-2.5 opacity-60" />
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── All project compounds from materials with PubChem CIDs ── */}
-      {(() => {
-        const pubchemMaterials = plan.materials.filter((m) => m.pubchemCid);
-        if (pubchemMaterials.length === 0) return null;
-        return (
-          <div className="mb-4">
+        {/* All project compounds */}
+        {pubchemMaterials.length > 0 && (
+          <div>
             <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               <FlaskConical className="size-3 text-primary" />
-              All Project Compounds ({pubchemMaterials.length})
+              Project Compounds  PubChem verified ({pubchemMaterials.length})
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+            <div className="flex gap-2.5 overflow-x-auto pb-1">
               {pubchemMaterials.map((mat) => (
-                <div
-                  key={mat.pubchemCid}
-                  className={`shrink-0 rounded-xl border bg-panel p-2.5 w-[148px] cursor-pointer transition-colors ${
-                    presetIndex === plan.materials.indexOf(mat)
-                      ? "border-primary/40 bg-primary-soft/30 shadow-sm"
-                      : "border-border hover:border-primary/30 hover:bg-muted/30"
-                  }`}
-                  onClick={() => {
-                    const idx = presets.findIndex((p) => p.name.toLowerCase().includes((mat.name || "").toLowerCase().split(" ")[0]));
-                    if (idx >= 0) setPresetIndex(idx);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === "Enter" && setPresetIndex(0)}
-                >
-                  <img
-                    src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${mat.pubchemCid}/PNG?image_size=large`}
+                <a key={mat.pubchemCid}
+                  href={mat.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}`}
+                  target="_blank" rel="noreferrer"
+                  className="shrink-0 rounded-xl border border-border bg-panel p-2.5 w-[148px] hover:border-primary/40 hover:bg-primary-soft/20 hover:shadow-sm transition-all group">
+                  <img src={`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${mat.pubchemCid}/PNG?image_size=large`}
                     alt={`${mat.name} structure`}
-                    className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain"
-                  />
-                  <div className="text-[11px] font-semibold leading-tight line-clamp-2">{mat.name}</div>
-                  {mat.molecularFormula && (
-                    <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>
-                  )}
+                    className="mb-1.5 h-20 w-full rounded-lg border border-border bg-white object-contain group-hover:border-primary/30 transition-colors" />
+                  <div className="text-[11px] font-semibold leading-tight line-clamp-2 group-hover:text-primary transition-colors">{mat.name}</div>
+                  {mat.molecularFormula && <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">{mat.molecularFormula}</div>}
                   <div className="mt-1 flex items-center justify-between gap-1">
-                    {mat.molecularWeight && (
-                      <span className="text-[10px] text-muted-foreground">{mat.molecularWeight.toFixed(0)} g/mol</span>
-                    )}
-                    <a
-                      href={mat.sourceUri || `https://pubchem.ncbi.nlm.nih.gov/compound/${mat.pubchemCid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline"
-                    >
-                      CID {mat.pubchemCid} <ExternalLink className="size-2.5" />
-                    </a>
+                    {mat.molecularWeight ? <span className="text-[10px] text-muted-foreground">{mat.molecularWeight.toFixed(0)} g/mol</span> : <span />}
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">CID {mat.pubchemCid} <ExternalLink className="size-2.5" /></span>
                   </div>
-                </div>
+                </a>
               ))}
             </div>
           </div>
-        );
-      })()}
+        )}
 
-      {/* ── Preset selector with role labels —— */}
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {presets.map((preset, index) => {
-          return (
-            <button
-              key={`${preset.name}-${index}`}
-              type="button"
-              onClick={() => setPresetIndex(index)}
-              className={`group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                presetIndex === index
-                  ? "border-primary/25 bg-primary-soft text-primary"
-                  : "border-border bg-panel text-foreground/75 hover:bg-muted/40"
-              }`}
-            >
-              <span className={`size-2 rounded-full ${presetIndex === index ? "bg-primary" : "bg-border"}`} />
-              {preset.name.split("(")[0].trim()}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── HYPOTHESIS EXPLORATION CANVAS ── */}
-      <div className="rounded-xl border border-border bg-muted/20 p-3 mb-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <Info className="size-3.5 text-muted-foreground" />
-            <span className="text-[11px] font-semibold text-foreground/75">Hypothesis Exploration Canvas</span>
+        {pubchemMaterials.length === 0 && !plan.targetCompound && (
+          <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-center">
+            <FlaskConical className="mx-auto mb-1.5 size-7 text-muted-foreground/40" />
+            <div className="text-xs font-medium text-foreground/70">{plan.materials[0]?.name || "Project compound"}</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">PubChem structure lookup pending for this compound set.</div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-full border border-border bg-panel p-0.5 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setMode("2d")}
-                className={`rounded-full px-2.5 py-1 transition-colors ${mode === "2d" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                2D
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("3d")}
-                className={`rounded-full px-2.5 py-1 transition-colors ${mode === "3d" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                3D
-              </button>
-            </div>
-          </div>
-        </div>
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Drag atoms · planning tool only — not a structural database record.
-        </p>
+        )}
 
-        {/* Atom canvas — controls moved below to prevent overlap */}
-        <div
-          ref={canvasRef}
-          className="relative h-56 overflow-hidden rounded-xl border border-border bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),rgba(224,234,248,0.88))]"
-        >
-          <div className="absolute inset-0 bg-[linear-gradient(transparent_95%,rgba(100,120,150,0.07)_95%),linear-gradient(90deg,transparent_95%,rgba(100,120,150,0.07)_95%)] bg-[size:28px_28px]" />
-          <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-            {model.bonds.map((bond) => {
-              const from = projectedAtoms.find((atom) => atom.id === bond.from);
-              const to = projectedAtoms.find((atom) => atom.id === bond.to);
-              if (!from || !to) return null;
-              return (
-                <g key={`${bond.from}-${bond.to}`}>
-                  <line
-                    x1={from.left}
-                    y1={from.top}
-                    x2={to.left}
-                    y2={to.top}
-                    stroke="rgba(55,75,100,0.4)"
-                    strokeWidth={mode === "3d" ? 1.8 + from.depth : 1.8}
-                    strokeLinecap="round"
-                  />
-                </g>
-              );
-            })}
-          </svg>
-          {projectedAtoms.map((atom) => (
-            <button
-              key={atom.id}
-              type="button"
-              onPointerDown={(event) => {
-                setSelectedAtomId(atom.id);
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                if (event.buttons === 1) handleCanvasMove(event, atom.id);
-              }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border shadow-md transition-shadow ${
-                elementColor[atom.element] || "bg-slate-500 text-white"
-              } ${
-                selectedAtomId === atom.id ? "border-primary ring-2 ring-primary/40" : "border-white/50"
-              }`}
-              style={{
-                left: `${atom.left}%`,
-                top: `${atom.top}%`,
-                width: atom.size,
-                height: atom.size,
-                opacity: 0.85 + atom.depth * 0.15,
-                transform: `translate(-50%, -50%) scale(${mode === "3d" ? 0.9 + atom.depth * 0.25 : 1})`,
-              }}
-              title={`${atom.element} — ${elementFullName[atom.element] ?? atom.element} (${atom.id})`}
-            >
-              <span className="text-[9px] font-bold">{atom.element}</span>
-            </button>
-          ))}
-          {/* Top-right info badge */}
-          <div className="absolute right-2.5 top-2.5 rounded-lg border border-border bg-panel/90 px-2.5 py-1.5 text-[11px] shadow-sm">
-            <div className="font-medium text-foreground">{model.atoms.length} atoms · {model.bonds.length} bonds</div>
-            <div className="text-muted-foreground">Drag to reposition</div>
-          </div>
-          {/* Bottom-left element legend */}
-          {(() => {
-            const presentElements = [...new Set(model.atoms.map((a) => a.element))];
-            return presentElements.length > 0 ? (
-              <div className="absolute bottom-2 left-2.5 flex flex-wrap gap-1">
-                {presentElements.map((el) => (
-                  <span
-                    key={el}
-                    className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold shadow-sm ${
-                      elementColor[el] || "bg-slate-500 text-white"
-                    }`}
-                    title={elementFullName[el] ?? el}
-                  >
-                    {el}
-                  </span>
-                ))}
-              </div>
-            ) : null;
-          })()}
-        </div>
-      </div>
-
-      {/* ── Canvas controls — below canvas to prevent any overlap ── */}
-      <div className="mt-2 flex items-center gap-2 flex-wrap">
-        <label className="flex items-center gap-2 text-[11px] text-muted-foreground flex-1 min-w-[120px]">
-          <span className="shrink-0 w-14">Rotation</span>
-          <input type="range" min="-180" max="180" value={rotation} onChange={(event) => setRotation(Number(event.target.value))} className="w-full accent-primary" />
-        </label>
-        <label className="flex items-center gap-2 text-[11px] text-muted-foreground flex-1 min-w-[120px]">
-          <span className="shrink-0 w-10">Spread</span>
-          <input type="range" min="12" max="26" value={spread} onChange={(event) => setSpread(Number(event.target.value))} className="w-full accent-primary" />
-        </label>
-        <div className="flex gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={addAtom}
-            className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary-soft px-2.5 py-1 text-[11px] text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-          >
-            <Plus className="size-3" />
-            Atom
-          </button>
-          <button
-            type="button"
-            onClick={() => { setModel(presets[presetIndex] || presets[0]); setRotation(18); setSpread(18); }}
-            className="inline-flex items-center gap-1 rounded-full border border-border bg-panel px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted/40 transition-colors"
-          >
-            <RotateCw className="size-3" />
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* ── Protocol & experimental context ── */}
-      <div className="space-y-2">
-        {/* Note + gates in one compact row */}
-        <div className="flex flex-wrap items-start gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground flex-1 min-w-0">
-            <FlaskConical className="size-3 shrink-0 text-primary" />
-            <span className="line-clamp-2">{model.note}</span>
-            {protocolContext.hasProtocolSource && (
-              <span className="ml-1 text-[10px] font-medium text-primary/70">· {protocolContext.label}</span>
-            )}
-          </div>
-        </div>
-
-        {/* Compound gates — keyword chips only */}
+        {/* Validation gates */}
         {plan.validation?.decisionGates && plan.validation.decisionGates.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-primary mr-1">
-              <ShieldCheck className="size-3" />Gates:
-            </span>
-            {plan.validation.decisionGates.slice(0, 3).map((gate) => (
-              <span key={gate} title={gate} className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success-soft px-2 py-0.5 text-[10px] text-success">
-                <CheckCircle2 className="size-2.5 shrink-0" />
-                {gate.split(" ").slice(0, 5).join(" ")}…
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Annotation — compact */}
-        <textarea
-          value={annotation}
-          onChange={(event) => setAnnotation(event.target.value)}
-          placeholder="Scientist note…"
-          rows={2}
-          className="w-full rounded-lg border border-border bg-panel px-2.5 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-        />
-      </div>
-
-      {/* ── Atom detail ── */}
-      <div className="space-y-2">
-        {selectedAtom && (
-          <div className="rounded-xl border border-primary/25 bg-primary-soft/30 p-2.5 text-[11px]">
-            <div className="mb-2 flex items-center gap-1.5 font-semibold text-primary">
-              <Atom className="size-3" /> {selectedAtom.id} · {selectedAtom.element}
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <ShieldCheck className="size-3 text-primary" /> Compound Gates
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {(["element", "x", "y", "z"] as const).map((field) => (
-                <label key={field}>
-                  <div className="mb-0.5 text-[10px] uppercase text-muted-foreground">{field}</div>
-                  <input
-                    type={field === "element" ? "text" : "number"}
-                    step="0.1"
-                    value={selectedAtom[field]}
-                    onChange={(event) => updateAtom(selectedAtom.id, {
-                      [field]: field === "element"
-                        ? event.target.value.toUpperCase().slice(0, 2)
-                        : Number(event.target.value),
-                    })}
-                    className="w-full rounded-md border border-border bg-panel px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </label>
+            <div className="flex flex-wrap gap-1.5">
+              {plan.validation.decisionGates.slice(0, 4).map((gate) => (
+                <span key={gate} title={gate}
+                  className="inline-flex items-center gap-1 rounded-full border border-success/25 bg-success-soft px-2.5 py-1 text-[10px] text-success">
+                  <CheckCircle2 className="size-2.5 shrink-0" />
+                  {gate.split(" ").slice(0, 6).join(" ")}{gate.split(" ").length > 6 ? "" : ""}
+                </span>
               ))}
             </div>
           </div>
         )}
 
-        {/* Coords table — collapsed by default */}
-        <details className="group rounded-xl border border-border bg-muted/20 px-2.5 py-1.5">
-          <summary className="cursor-pointer select-none text-[10px] font-semibold uppercase tracking-wide text-muted-foreground list-none flex items-center gap-1">
-            <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
-            Atom coordinates ({model.atoms.length})
-          </summary>
-          <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-panel">
-            <table className="w-full text-left text-[11px]">
-              <thead className="sticky top-0 bg-panel">
-                <tr className="border-b border-border text-muted-foreground">
-                  <th className="px-2 py-1.5">Atom</th>
-                  <th className="px-2 py-1.5">El</th>
-                  <th className="px-2 py-1.5">X</th>
-                  <th className="px-2 py-1.5">Y</th>
-                  <th className="px-2 py-1.5">Z</th>
-                </tr>
-              </thead>
-              <tbody>
-                {model.atoms.map((atom) => (
-                  <tr key={atom.id} className="border-b border-border/60 last:border-b-0 hover:bg-muted/20">
-                    <td className="px-2 py-1 font-medium">{atom.id}</td>
-                    <td className="px-2 py-1">{atom.element}</td>
-                    <td className="px-2 py-1">{atom.x.toFixed(1)}</td>
-                    <td className="px-2 py-1">{atom.y.toFixed(1)}</td>
-                    <td className="px-2 py-1">{atom.z.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
+        {/* Scientist annotation */}
+        <textarea value={annotation} onChange={(e) => saveAnnotation(e.target.value)}
+          placeholder="Scientist note on compound context, structural concerns, or synthesis alternatives"
+          rows={2}
+          className="w-full rounded-lg border border-border bg-muted/20 px-2.5 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
       </div>
     </section>
   );
 }
-
