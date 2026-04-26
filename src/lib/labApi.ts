@@ -92,6 +92,17 @@ export type ReviewAdaptation = {
   impact: string;
 };
 
+export type HypothesisCompound = {
+  name: string;
+  role: "reagent" | "intermediate" | "product";
+  rationale?: string;
+  pubchemCid?: number;
+  molecularFormula?: string;
+  molecularWeight?: number;
+  iupacName?: string;
+  sourceUri?: string;
+};
+
 export type ExperimentPlan = {
   id: string;
   project: string;
@@ -124,6 +135,7 @@ export type ExperimentPlan = {
   validation: ValidationPlan;
   reviewAdaptations: ReviewAdaptation[];
   sources: SourceReference[];
+  compoundMap?: HypothesisCompound[];
   /** The final / target compound for this project with an optional literature reference */
   targetCompound?: {
     name: string;

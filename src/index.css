@@ -8,67 +8,60 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Hackathon-grade Scientific palette — vivid, high-contrast, WOW-factor */
-    --background: 218 30% 97%;
-    --foreground: 222 32% 7%;
+    /* Professional Scientific Lab palette — precise, high-contrast, authoritative */
+    --background: 220 28% 97%;
+    --foreground: 222 36% 8%;
 
-    --surface: 216 24% 94%;
+    --surface: 218 22% 94%;
     --panel: 0 0% 100%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 32% 7%;
+    --card-foreground: 222 36% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 32% 7%;
+    --popover-foreground: 222 36% 8%;
 
-    /* Brand: science indigo — deep, authoritative */
-    --primary: 234 72% 34%;
+    /* Brand: deep science indigo — research authority */
+    --primary: 232 75% 36%;
     --primary-foreground: 0 0% 100%;
-    --primary-soft: 232 75% 95%;
-    --primary-dark: 234 72% 22%;
+    --primary-soft: 230 78% 95%;
+    --primary-dark: 232 75% 24%;
 
-    --secondary: 216 22% 90%;
+    --secondary: 216 20% 91%;
     --secondary-foreground: 222 28% 18%;
 
-    --muted: 216 22% 93%;
-    --muted-foreground: 216 17% 42%;
+    --muted: 218 20% 94%;
+    --muted-foreground: 218 16% 44%;
 
-    /* Accent: vivid teal — discovery, innovation */
-    --accent: 178 72% 34%;
+    /* Accent: scientific teal — discovery, precision */
+    --accent: 176 68% 32%;
     --accent-foreground: 0 0% 100%;
-    --accent-soft: 178 62% 92%;
+    --accent-soft: 176 58% 93%;
 
-    --success: 200 72% 30%;
-    --success-soft: 200 60% 91%;
-    --warning: 34 94% 42%;
-    --warning-soft: 34 96% 92%;
-    --danger: 350 72% 42%;
-    --danger-soft: 350 72% 95%;
+    --success: 158 60% 28%;
+    --success-soft: 158 52% 92%;
+    --warning: 36 90% 40%;
+    --warning-soft: 36 88% 93%;
+    --danger: 350 68% 40%;
+    --danger-soft: 350 68% 95%;
 
-    --destructive: 350 72% 42%;
+    --destructive: 350 68% 40%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 218 26% 85%;
-    --input: 218 26% 85%;
-    --ring: 234 72% 34%;
+    --border: 218 22% 86%;
+    --input: 218 22% 86%;
+    --ring: 232 75% 36%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 220 24% 98%;
+    --sidebar-foreground: 222 28% 22%;
+    --sidebar-primary: 232 75% 36%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 218 20% 94%;
+    --sidebar-accent-foreground: 222 28% 22%;
+    --sidebar-border: 218 22% 89%;
+    --sidebar-ring: 232 75% 36%;
   }
 
   .dark {

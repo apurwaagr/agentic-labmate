@@ -1124,6 +1124,113 @@ async function buildMaterialsFromEvidence(parsed, hypothesis, evidencePack) {
   });
 }
 
+async function inferHypothesisCompoundMap(hypothesis, parsed, evidencePack, materials = []) {
+  const fallbackMap = [];
+  const lowerHyp = (hypothesis || "").toLowerCase();
+
+  if (/(gold nanoparticle|aunp|turkevich|haucl4|trisodium citrate|citrate-to-gold)/.test(lowerHyp)) {
+    fallbackMap.push(
+      { name: "Hydrogen tetrachloroaurate (HAuCl4)", role: "reagent", rationale: "Gold precursor for Turkevich reduction." },
+      { name: "Trisodium citrate", role: "reagent", rationale: "Reducing and capping agent controlling nucleation/growth." },
+      { name: "Gold nanoparticles", role: "product", rationale: "Target final colloidal product from the hypothesis." },
+    );
+  } else {
+    fallbackMap.push(
+      ...materials.slice(0, 4).map((m) => ({ name: m.name, role: "reagent", rationale: "Material inferred from literature-backed planning." })),
+      { name: parsed.outcome || parsed.intervention || "Target outcome species", role: "product", rationale: "Target species implied by parsed hypothesis outcome." },
+    );
+  }
+
+  let aiMap = [];
+  if (geminiApiKey) {
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        compounds: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              name: { type: "STRING" },
+              role: { type: "STRING", enum: ["reagent", "intermediate", "product"] },
+              rationale: { type: "STRING" },
+            },
+            required: ["name", "role", "rationale"],
+          },
+        },
+      },
+      required: ["compounds"],
+    };
+
+    const prompt = `
+You are extracting a chemistry compound map from a scientific hypothesis.
+Return 3-8 concrete compound names with role tags.
+Prefer actual chemical entities, not assay steps.
+
+Hypothesis:
+${hypothesis}
+
+Parsed fields:
+${JSON.stringify({
+      intervention: parsed.intervention,
+      subject: parsed.subject,
+      outcome: parsed.outcome,
+      mechanism: parsed.mechanism,
+      control: parsed.control,
+    })}
+
+Top evidence titles:
+${evidencePack.items.slice(0, 4).map((item) => `- ${item.title}`).join("\n")}
+
+Return JSON only.
+`;
+
+    try {
+      const { data } = await callGemini({ prompt, schema, grounded: false });
+      aiMap = Array.isArray(data?.compounds) ? data.compounds : [];
+    } catch {
+      aiMap = [];
+    }
+  }
+
+  const merged = [...aiMap, ...fallbackMap]
+    .filter((item) => item?.name)
+    .map((item) => ({
+      name: String(item.name).trim(),
+      role: ["reagent", "intermediate", "product"].includes(item.role) ? item.role : "reagent",
+      rationale: String(item.rationale || "").trim(),
+    }));
+
+  const deduped = [];
+  const seen = new Set();
+  for (const item of merged) {
+    const key = item.name.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  const enriched = await Promise.all(
+    deduped.slice(0, 10).map(async (item) => {
+      const pubchem = await fetchPubChemCompoundByName(item.name).catch(() => null);
+      return {
+        name: pubchem?.title || item.name,
+        role: item.role,
+        rationale: item.rationale,
+        pubchemCid: pubchem?.cid || undefined,
+        molecularFormula: pubchem?.molecularFormula || undefined,
+        molecularWeight: pubchem?.molecularWeight || undefined,
+        iupacName: pubchem?.iupacName || undefined,
+        sourceUri: pubchem?.url || undefined,
+      };
+    }),
+  );
+
+  return enriched;
+}
+
 /** Return a chemically meaningful quantity string for a protocol step */
 function stepQuantity(label = "", units = "") {
   const lower = label.toLowerCase();
@@ -1817,6 +1924,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
         : undefined,
     };
   }
+  const compoundMap = await inferHypothesisCompoundMap(hypothesis, parsed, evidencePack, materials);
 
   return {
     experiment: {
@@ -1856,6 +1964,7 @@ async function buildEvidenceBackedPlan(hypothesis, relatedReviews) {
         source: item.source,
         uri: evidenceUrl(item),
       })),
+      ...(compoundMap?.length ? { compoundMap } : {}),
       ...(targetCompound ? { targetCompound } : {}),
     },
   };

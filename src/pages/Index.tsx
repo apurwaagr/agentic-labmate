@@ -25,6 +25,307 @@ type LabProject = ProjectListItem & {
   novelty?: string;
 };
 
+const REFERENCE_PROJECT_ID = "gold-np-reference";
+
+function buildReferenceProjectBundle() {
+  const now = new Date().toISOString();
+  const project: LabProject = {
+    id: REFERENCE_PROJECT_ID,
+    name: "Turkevich Gold Nanoparticle Synthesis",
+    hypothesis:
+      "If trisodium citrate is used to reduce HAuCl4 at controlled boiling conditions, then 15-25 nm citrate-capped gold nanoparticles will form with an SPR peak near 520 nm and stable colloidal behavior for at least 7 days.",
+    status: "planned",
+    domain: "Nanomaterials / Colloidal Chemistry",
+    novelty: "similar work exists",
+    updatedAt: now,
+  };
+
+  const plan: ExperimentPlan = {
+    id: "gold-np-reference-exp",
+    project: project.name,
+    hypothesis: project.hypothesis,
+    plainEnglish:
+      "Convert gold salt to stable citrate-capped gold nanoparticles and validate size and optical signature against expected literature ranges.",
+    domain: "Nanomaterials / Colloidal Chemistry",
+    metrics: {
+      confidence: "82%",
+      novelty: "similar work exists",
+      sustainability: "76",
+    },
+    novelty: {
+      signal: "similar work exists",
+      summary:
+        "Turkevich citrate reduction is established; this setup remains useful as a benchmark for reproducibility and downstream functionalization studies.",
+      references: [
+        {
+          title: "The chemistry of the citrate process of gold nanoparticle synthesis",
+          source: "PubChem / Literature",
+          uri: "https://pubmed.ncbi.nlm.nih.gov/17658745/",
+        },
+        {
+          title: "Mechanistic understanding of Turkevich method",
+          source: "Open literature",
+          uri: "https://doi.org/10.1039/C3NR02121A",
+        },
+      ],
+    },
+    materials: [
+      {
+        name: "Hydrogen tetrachloroaurate(III) trihydrate",
+        catalogNumber: "HAuCl4-3H2O",
+        supplier: "Sigma-Aldrich",
+        quantity: "100 mg",
+        unitCostUsd: 145,
+        leadTime: "3-5 days",
+        status: "order",
+        pubchemCid: 28103,
+        molecularFormula: "AuCl4H",
+        molecularWeight: 339.79,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/28103",
+      },
+      {
+        name: "Trisodium citrate dihydrate",
+        catalogNumber: "TCD-500G",
+        supplier: "Thermo Fisher",
+        quantity: "500 g",
+        unitCostUsd: 42,
+        leadTime: "2-4 days",
+        status: "in-stock",
+        pubchemCid: 16211978,
+        molecularFormula: "C6H9Na3O9",
+        molecularWeight: 258.06,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/16211978",
+      },
+      {
+        name: "Ultrapure water",
+        catalogNumber: "MQ-H2O",
+        supplier: "In-house",
+        quantity: "2 L",
+        unitCostUsd: 8,
+        leadTime: "same day",
+        status: "owned",
+      },
+      {
+        name: "Gold nanoparticles",
+        catalogNumber: "AU-NP-RESULT",
+        supplier: "In-lab synthesis",
+        quantity: "100 mL colloid",
+        unitCostUsd: 0,
+        leadTime: "generated",
+        status: "owned",
+        pubchemCid: 23985,
+        molecularFormula: "Au",
+        molecularWeight: 196.97,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/23985",
+      },
+    ],
+    steps: [
+      {
+        id: "s1",
+        title: "Prepare precursor and citrate stocks",
+        detail:
+          "Prepare 1 mM HAuCl4 in ultrapure water and 38.8 mM trisodium citrate stock. Filter both through 0.22 um membrane to minimize particle contamination.",
+        quantity: "100 mL batch",
+        duration: "25 min",
+        source: "protocols.io",
+        sourceTitle: "Citrate reduction synthesis of Au nanoparticles",
+        sourceUri: "https://www.protocols.io/",
+        riskLevel: "low",
+        riskNote: "Avoid metal contamination from glassware residues.",
+        validationChecks: ["Solutions clear", "No precipitate", "Correct molarity labels"],
+        stepMaterials: ["HAuCl4", "Trisodium citrate", "Ultrapure water"],
+        safetyConstraints: ["Use gloves and eye protection", "Handle gold salt away from skin contact"],
+        rationale: "Stock accuracy directly controls nucleation rate and final size spread.",
+      },
+      {
+        id: "s2",
+        title: "Heat and initiate reduction",
+        detail:
+          "Bring HAuCl4 solution to rolling boil under stirring. Quickly inject citrate solution and maintain boiling for 15 minutes.",
+        quantity: "100 mL reaction",
+        duration: "20 min",
+        source: "Open literature",
+        sourceTitle: "Turkevich method optimization report",
+        sourceUri: "https://doi.org/10.1039/C3NR02121A",
+        riskLevel: "med",
+        riskNote: "Unstable temperature may broaden nanoparticle size distribution.",
+        validationChecks: ["Color shift pale yellow to wine-red", "No visible aggregates"],
+        decisionGate: "Proceed only if colloid appears ruby-red without gray/black precipitate.",
+        stepMaterials: ["HAuCl4 solution", "Citrate solution"],
+        safetyConstraints: ["Use heat-resistant gloves", "Prevent boiling overflow"],
+        rationale: "Temperature and injection timing determine nucleation burst and growth balance.",
+      },
+      {
+        id: "s3",
+        title: "Cool and age colloid",
+        detail:
+          "Remove heat and continue stirring during cool-down to room temperature. Age for 12-24 hours before characterization.",
+        quantity: "full batch",
+        duration: "24 h",
+        source: "protocols.io",
+        sourceTitle: "Post-synthesis stabilization for citrate-capped AuNP",
+        sourceUri: "https://www.protocols.io/",
+        riskLevel: "low",
+        riskNote: "Insufficient aging can cause unstable UV-Vis baseline.",
+        validationChecks: ["No sediment after 24 h", "Uniform red color"],
+        stepMaterials: ["Fresh AuNP colloid"],
+        rationale: "Aging allows surface adsorption equilibrium and improved colloid stability.",
+      },
+      {
+        id: "s4",
+        title: "UV-Vis characterization",
+        detail:
+          "Acquire UV-Vis spectrum from 400-800 nm. Confirm surface plasmon resonance peak near 520 nm.",
+        quantity: "3 replicates",
+        duration: "30 min",
+        source: "Open literature",
+        sourceTitle: "Optical signatures of citrate-capped AuNP",
+        sourceUri: "https://pubmed.ncbi.nlm.nih.gov/17658745/",
+        riskLevel: "low",
+        riskNote: "Dirty cuvettes can shift baseline and distort peak intensity.",
+        validationChecks: ["Peak at 518-525 nm", "Replicate variance < 3 nm"],
+        decisionGate: "Proceed to storage or application only if SPR peak is in expected band.",
+        stepMaterials: ["AuNP colloid", "Quartz cuvette"],
+        rationale: "SPR peak position is a rapid proxy for size and monodispersity.",
+      },
+      {
+        id: "s5",
+        title: "Stability check (7 days)",
+        detail:
+          "Store at 4 C and room temperature. Re-check UV-Vis and visible aggregation on day 7.",
+        quantity: "2 storage conditions",
+        duration: "7 days",
+        source: "Internal QC",
+        sourceTitle: "Colloid stability assessment",
+        riskLevel: "med",
+        riskNote: "Ionic contamination may trigger delayed aggregation.",
+        validationChecks: ["No major peak red-shift (>5 nm)", "No visible sediment"],
+        decisionGate: "Accept batch only when stability criteria pass in both storage conditions.",
+        stepMaterials: ["AuNP aliquots", "Storage vials"],
+        rationale: "Short-term stability confirms practical usability beyond immediate synthesis.",
+      },
+    ],
+    timeline: [
+      { phase: "Preparation", durationDays: 1, dependsOn: [], owner: "Scientist", deliverable: "Calibrated precursor/citrate stocks" },
+      { phase: "Synthesis Run", durationDays: 1, dependsOn: ["Preparation"], owner: "Scientist", deliverable: "Fresh AuNP colloid" },
+      { phase: "Characterization", durationDays: 1, dependsOn: ["Synthesis Run"], owner: "Scientist", deliverable: "UV-Vis data and pass/fail decision" },
+      { phase: "Stability Monitoring", durationDays: 7, dependsOn: ["Characterization"], owner: "Scientist", deliverable: "Day-7 stability report" },
+    ],
+    budget: {
+      reagentsUsd: 195,
+      equipmentUsd: 220,
+      shippingUsd: 35,
+      laborUsd: 180,
+      contingencyUsd: 63,
+      totalUsd: 693,
+      budgetCapUsd: 900,
+      savedUsd: 207,
+      reliability: "High reliability for reference evaluation; values represent realistic pilot-scale costs.",
+      assumptions: [
+        "UV-Vis instrument is institution-owned.",
+        "Single 100 mL batch with triplicate characterization.",
+      ],
+      lineItems: [
+        { label: "Gold precursor", amountUsd: 145, category: "reagents", note: "HAuCl4 trihydrate" },
+        { label: "Citrate + consumables", amountUsd: 50, category: "reagents" },
+        { label: "Heating/stirring setup usage", amountUsd: 90, category: "equipment" },
+        { label: "UV-Vis usage", amountUsd: 130, category: "equipment" },
+        { label: "Shipping", amountUsd: 35, category: "shipping" },
+        { label: "Scientist time", amountUsd: 180, category: "labor" },
+        { label: "Contingency", amountUsd: 63, category: "contingency" },
+      ],
+    },
+    benchmark: [
+      { label: "Manual baseline protocol", time: "12 days", cost: 820, sustainability: 65, ours: false },
+      { label: "This reference plan", time: "10 days", cost: 693, sustainability: 76, ours: true },
+    ],
+    validation: {
+      primaryMetric: "UV-Vis SPR peak position",
+      successCriteria: "SPR peak at 518-525 nm with no visible aggregation and day-7 stability retained.",
+      failureCriteria: [
+        "Peak outside acceptance band",
+        "Visible precipitation or strong red-shift after storage",
+        "Replicate spectral inconsistency",
+      ],
+      decisionGates: [
+        "Ruby-red colloid after reduction",
+        "SPR peak within 518-525 nm",
+        "No major day-7 instability",
+      ],
+    },
+    reviewAdaptations: [
+      {
+        section: "Synthesis",
+        change: "Added explicit rolling-boil condition and citrate injection timing.",
+        impact: "Improves reproducibility across operators.",
+      },
+      {
+        section: "Validation",
+        change: "Added day-7 stability gate.",
+        impact: "Ensures colloid quality for practical downstream use.",
+      },
+    ],
+    sources: [
+      { title: "The chemistry of the citrate process of gold nanoparticle synthesis", source: "PubMed", uri: "https://pubmed.ncbi.nlm.nih.gov/17658745/" },
+      { title: "Mechanistic study of Turkevich synthesis", source: "DOI", uri: "https://doi.org/10.1039/C3NR02121A" },
+      { title: "Protocol templates for AuNP synthesis", source: "protocols.io", uri: "https://www.protocols.io/" },
+    ],
+    compoundMap: [
+      {
+        name: "Hydrogen tetrachloroaurate(III)",
+        role: "reagent",
+        rationale: "Gold precursor in Turkevich reaction.",
+        pubchemCid: 28103,
+        molecularFormula: "AuCl4H",
+        molecularWeight: 339.79,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/28103",
+      },
+      {
+        name: "Trisodium citrate",
+        role: "reagent",
+        rationale: "Reductant and capping ligand.",
+        pubchemCid: 6224,
+        molecularFormula: "C6H5Na3O7",
+        molecularWeight: 258.06,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/6224",
+      },
+      {
+        name: "Gold nanoparticles",
+        role: "product",
+        rationale: "Target colloidal product.",
+        pubchemCid: 23985,
+        molecularFormula: "Au",
+        molecularWeight: 196.97,
+        sourceUri: "https://pubchem.ncbi.nlm.nih.gov/compound/23985",
+      },
+    ],
+    targetCompound: {
+      name: "Gold nanoparticles",
+      pubchemCid: 23985,
+      molecularFormula: "Au",
+      molecularWeight: 196.97,
+      iupacName: "gold",
+      note: "Final colloidal product targeted by this reference workflow.",
+      literatureRef: {
+        title: "The chemistry of the citrate process of gold nanoparticle synthesis",
+        uri: "https://pubmed.ncbi.nlm.nih.gov/17658745/",
+      },
+    },
+  };
+
+  const reviews: ReviewRecord[] = [
+    {
+      experimentId: plan.id,
+      section: "Validation",
+      reviewer: "Reference QA Reviewer",
+      correction: "Track replicate peak variance and not only mean peak position.",
+      severity: "medium",
+    },
+  ];
+
+  return { project, plan, reviews };
+}
+
 const PROJECTS_STORAGE_KEY = "agentic-labmate-projects";
 const PLANS_STORAGE_KEY = "agentic-labmate-plans";
 const ACTIVE_PROJECT_STORAGE_KEY = "agentic-labmate-active-project";
@@ -78,6 +379,7 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [activeHypothesisDraft, setActiveHypothesisDraft] = useState("");
   const logIntervalRef = useRef<number | null>(null);
   // Prevents save effects from overwriting localStorage before the initial load has completed.
   const [initialized, setInitialized] = useState(false);
@@ -154,6 +456,10 @@ const Index = () => {
 
   const activePlan = activeProject ? plansByProject[activeProject.id] : undefined;
   const activeReviews = activeProject ? reviewsByProject[activeProject.id] ?? [] : [];
+
+  useEffect(() => {
+    setActiveHypothesisDraft(activeProject?.hypothesis || "");
+  }, [activeProject?.id]);
 
   // Auto-generate when project has no plan (new project or plan was lost).
   useEffect(() => {
@@ -368,6 +674,34 @@ const Index = () => {
     }
   }
 
+  function loadReferenceProject() {
+    const reference = buildReferenceProjectBundle();
+
+    setProjects((current) => {
+      const withoutReference = current.filter((item) => item.id !== REFERENCE_PROJECT_ID);
+      return [reference.project, ...withoutReference];
+    });
+
+    setPlansByProject((current) => ({
+      ...current,
+      [REFERENCE_PROJECT_ID]: reference.plan,
+    }));
+
+    setReviewsByProject((current) => ({
+      ...current,
+      [REFERENCE_PROJECT_ID]: reference.reviews,
+    }));
+
+    setActiveProjectId(REFERENCE_PROJECT_ID);
+    setComposerOpen(false);
+    setError(null);
+    setActiveTab("protocol");
+    setActiveHypothesisDraft(reference.project.hypothesis);
+    setAgentLogs([
+      createLog("reference-loaded", "Loaded full reference project with compounds, protocol, budget, timeline, and validation.", "done"),
+    ]);
+  }
+
   const workspaceEmpty = !activeProject;
 
   return (
@@ -492,6 +826,13 @@ const Index = () => {
                           {loading ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
                           Create project and generate plan
                         </button>
+                        <button
+                          type="button"
+                          onClick={loadReferenceProject}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-5 py-3 text-sm font-medium text-accent-foreground shadow-sm hover:bg-accent-soft/70"
+                        >
+                          Load full reference project
+                        </button>
                         {!workspaceEmpty && (
                           <button
                             type="button"
@@ -592,13 +933,8 @@ const Index = () => {
                     <div className="border-t border-border px-5 py-4 bg-muted/20">
                       <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:gap-3">
                         <textarea
-                          value={activeProject.hypothesis}
-                          onChange={(event) =>
-                            updateProject(activeProject.id, (project) => ({
-                              ...project,
-                              hypothesis: event.target.value,
-                            }))
-                          }
+                          value={activeHypothesisDraft}
+                          onChange={(event) => setActiveHypothesisDraft(event.target.value)}
                           rows={2}
                           className="flex-1 rounded-xl border border-border bg-panel px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
                           placeholder="Scientific hypothesis…"
@@ -606,7 +942,30 @@ const Index = () => {
                         <div className="flex gap-2 lg:flex-col lg:w-36">
                           <button
                             type="button"
-                            onClick={() => void generateForProject(activeProject.id, activeProject.hypothesis)}
+                            onClick={() =>
+                              updateProject(activeProject.id, (project) => ({
+                                ...project,
+                                hypothesis: activeHypothesisDraft,
+                                updatedAt: new Date().toISOString(),
+                              }))
+                            }
+                            disabled={activeHypothesisDraft.trim().length === 0}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-xs font-semibold text-primary disabled:opacity-50"
+                          >
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const hypothesis = activeHypothesisDraft.trim();
+                              if (!hypothesis) return;
+                              updateProject(activeProject.id, (project) => ({
+                                ...project,
+                                hypothesis,
+                                updatedAt: new Date().toISOString(),
+                              }));
+                              void generateForProject(activeProject.id, hypothesis);
+                            }}
                             disabled={loading}
                             className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground shadow-sm disabled:opacity-60"
                           >

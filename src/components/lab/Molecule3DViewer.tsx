@@ -1,55 +1,86 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { RotateCcw, Pause, Play, Maximize2, ZoomIn } from "lucide-react";
+
+type ViewerStyle = "ballstick" | "stick" | "sphere";
 
 declare global {
   interface Window {
     $3Dmol?: {
-      createViewer: (element: HTMLElement, config: { backgroundColor: string }) => {
-        clear: () => void;
-        addModel: (data: string, format: string) => void;
-        setStyle: (selection: Record<string, never>, style: Record<string, unknown>) => void;
-        zoomTo: () => void;
-        spin: (enabled: boolean) => void;
-        render: () => void;
-      };
+      createViewer: (element: HTMLElement, config: { backgroundColor: string }) => Viewer3D;
     };
   }
+}
+
+interface Viewer3D {
+  clear: () => void;
+  addModel: (data: string, format: string) => void;
+  setStyle: (selection: Record<string, never>, style: Record<string, unknown>) => void;
+  zoomTo: () => void;
+  spin: (enabled: boolean | string, speed?: number) => void;
+  render: () => void;
+  resize: () => void;
 }
 
 let scriptPromise: Promise<void> | null = null;
 
 function ensure3DmolLoaded() {
-  if (window.$3Dmol) {
-    return Promise.resolve();
-  }
-
-  if (scriptPromise) {
-    return scriptPromise;
-  }
-
+  if (window.$3Dmol) return Promise.resolve();
+  if (scriptPromise) return scriptPromise;
   scriptPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://3dmol.org/build/3Dmol-min.js";
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load 3Dmol viewer library"));
+    script.onerror = () => reject(new Error("Failed to load 3Dmol"));
     document.head.appendChild(script);
   });
-
   return scriptPromise;
 }
 
-export function Molecule3DViewer({ cid, className }: { cid: number; className?: string }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [used3DConformer, setUsed3DConformer] = useState(false);
+function styleConfig(style: ViewerStyle): Record<string, unknown> {
+  if (style === "sphere") return { sphere: { colorscheme: "Jmol", scale: 0.45 } };
+  if (style === "stick") return { stick: { colorscheme: "Jmol", radius: 0.15 } };
+  // ball-and-stick (default)
+  return {
+    stick: { colorscheme: "Jmol", radius: 0.12 },
+    sphere: { colorscheme: "Jmol", scale: 0.32 },
+  };
+}
 
+export function Molecule3DViewer({
+  cid,
+  className,
+  label,
+}: {
+  cid: number;
+  className?: string;
+  label?: string;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<Viewer3D | null>(null);
+  const sdfRef = useRef<string>("");
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [spinning, setSpinning] = useState(false);
+  const [viewStyle, setViewStyle] = useState<ViewerStyle>("ballstick");
+  const [used3D, setUsed3D] = useState(false);
+
+  // Apply current style without re-fetching SDF
+  const applyStyle = useCallback((v: Viewer3D, style: ViewerStyle) => {
+    v.setStyle({} as Record<string, never>, styleConfig(style));
+    v.render();
+  }, []);
+
+  // Build / rebuild viewer whenever cid changes
   useEffect(() => {
     let active = true;
+    setStatus("loading");
+    setSpinning(false);
+    setUsed3D(false);
+    viewerRef.current = null;
+    sdfRef.current = "";
 
     async function render3D() {
       try {
-        setStatus("loading");
-        setUsed3DConformer(false);
         await ensure3DmolLoaded();
 
         const urls = [
@@ -59,57 +90,149 @@ export function Molecule3DViewer({ cid, className }: { cid: number; className?: 
 
         let sdf = "";
         let got3D = false;
-        for (const [index, url] of urls.entries()) {
-          const response = await fetch(url);
-          if (!response.ok) {
+        for (const [i, url] of urls.entries()) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            sdf = await res.text();
+            got3D = i === 0;
+            break;
+          } catch {
             continue;
           }
-          sdf = await response.text();
-          got3D = index === 0;
-          break;
         }
 
-        if (!sdf) {
-          throw new Error("No model available");
-        }
+        if (!sdf) throw new Error("No SDF available");
+        if (!active || !hostRef.current || !window.$3Dmol) return;
 
-        if (!active || !hostRef.current || !window.$3Dmol) {
-          return;
-        }
-
-        const viewer = window.$3Dmol.createViewer(hostRef.current, { backgroundColor: "white" });
+        sdfRef.current = sdf;
+        // Dark navy background - professional mol-vis standard
+        const viewer = window.$3Dmol.createViewer(hostRef.current, {
+          backgroundColor: "#0d1117",
+        });
         viewer.clear();
         viewer.addModel(sdf, "sdf");
-        viewer.setStyle({}, { stick: { radius: 0.18 }, sphere: { scale: 0.3 } });
+        applyStyle(viewer, "ballstick");
         viewer.zoomTo();
         viewer.spin(false);
         viewer.render();
-        setUsed3DConformer(got3D);
+        viewerRef.current = viewer;
+        setUsed3D(got3D);
         setStatus("ready");
       } catch {
-        if (active) {
-          setStatus("error");
-        }
+        if (active) setStatus("error");
       }
     }
 
     void render3D();
+    return () => { active = false; };
+  }, [cid, applyStyle]);
 
-    return () => {
-      active = false;
-    };
-  }, [cid]);
+  // Style toggle (no re-fetch)
+  function cycleStyle() {
+    const order: ViewerStyle[] = ["ballstick", "stick", "sphere"];
+    const next = order[(order.indexOf(viewStyle) + 1) % order.length];
+    setViewStyle(next);
+    if (viewerRef.current) applyStyle(viewerRef.current, next);
+  }
+
+  // Spin toggle
+  function toggleSpin() {
+    const next = !spinning;
+    setSpinning(next);
+    viewerRef.current?.spin(next ? "y" : false);
+    viewerRef.current?.render();
+  }
+
+  // Reset view
+  function resetView() {
+    viewerRef.current?.zoomTo();
+    viewerRef.current?.render();
+  }
+
+  const styleLabel = { ballstick: "Ball & Stick", stick: "Stick", sphere: "Space Fill" }[viewStyle];
 
   return (
-    <div className={className}>
-      <div ref={hostRef} className="h-44 w-full rounded-xl border border-border bg-white" />
-      {status === "loading" && <div className="mt-1 text-[10px] text-muted-foreground">Loading 3D structure...</div>}
-      {status === "error" && <div className="mt-1 text-[10px] text-warning">3D structure is not available for this compound.</div>}
+    <div className={`relative overflow-hidden rounded-xl ${className ?? ""}`}>
+      {/* Viewer canvas */}
+      <div
+        ref={hostRef}
+        className="w-full h-60 rounded-xl bg-[#0d1117]"
+        style={{ minHeight: "15rem" }}
+      />
+
+      {/* Loading overlay */}
+      {status === "loading" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-[#0d1117]">
+          <div className="mb-2 h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          <span className="text-[11px] text-slate-400">Loading 3D conformer…</span>
+        </div>
+      )}
+
+      {/* Error overlay */}
+      {status === "error" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-[#0d1117]">
+          <div className="text-2xl">🧪</div>
+          <span className="text-[11px] text-slate-400 text-center px-4">
+            3D structure unavailable for this compound.
+            <br />
+            For nanoparticles or bulk metals, 3D conformers may not exist.
+          </span>
+        </div>
+      )}
+
+      {/* Controls bar (shown when ready) */}
       {status === "ready" && (
-        <div className="mt-1 text-[10px] text-muted-foreground">
-          {used3DConformer
-            ? "Interactive 3D conformer loaded. Drag to rotate and scroll to zoom."
-            : "Interactive model loaded from available structural record (full 3D conformer was not provided)."}
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between gap-1 rounded-b-xl bg-gradient-to-t from-[#0d1117]/90 to-transparent px-2.5 py-2">
+          {/* Left: CID + conformer badge */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            {label && (
+              <span className="truncate max-w-[120px] text-[10px] text-slate-300 font-medium">{label}</span>
+            )}
+            {used3D && (
+              <span className="shrink-0 rounded-full bg-emerald-500/20 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] text-emerald-400">3D</span>
+            )}
+          </div>
+
+          {/* Right: controls */}
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={cycleStyle}
+              title={`Style: ${styleLabel}`}
+              className="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] text-slate-300 hover:bg-white/15 transition-colors"
+            >
+              <ZoomIn className="size-2.5" />
+              {styleLabel}
+            </button>
+            <button
+              type="button"
+              onClick={resetView}
+              title="Reset view"
+              className="flex size-6 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-300 hover:bg-white/15 transition-colors"
+            >
+              <RotateCcw className="size-3" />
+            </button>
+            <button
+              type="button"
+              onClick={toggleSpin}
+              title={spinning ? "Stop rotation" : "Auto-rotate"}
+              className={`flex size-6 items-center justify-center rounded-md border transition-colors ${
+                spinning
+                  ? "border-primary/40 bg-primary/20 text-primary"
+                  : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/15"
+              }`}
+            >
+              {spinning ? <Pause className="size-3" /> : <Play className="size-3" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top-right: resize hint */}
+      {status === "ready" && (
+        <div className="absolute top-2 right-2 pointer-events-none">
+          <Maximize2 className="size-3 text-white/20" />
         </div>
       )}
     </div>

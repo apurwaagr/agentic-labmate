@@ -1,5 +1,18 @@
 [
   {
+    "experimentId": "custom-gold-nanoparticles-of-15-20nm-diameter-can-be-sy",
+    "section": "General",
+    "reviewer": "Scientist",
+    "correction": "test",
+    "severity": "medium",
+    "domain": "Molecular Biology",
+    "hypothesis": "Gold nanoparticles of 15-20nm diameter can be synthesized using the Turkevich method with trisodium citrate as the reducing agent, and particle size can be controlled by varying the citrate-to-gold ratio.",
+    "tags": [
+      "Molecular Biology",
+      "General"
+    ]
+  },
+  {
     "experimentId": "cell-biology-trehalose",
     "section": "General",
     "reviewer": "Scientist",
